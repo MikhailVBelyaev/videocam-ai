@@ -1,0 +1,56 @@
+services:
+  cams_grabber:
+    build: ./cams_grabber
+    container_name: cams_grabber
+    volumes:
+      - ./output:/app/output   # persistent folder
+    environment:
+      - CUDA_VISIBLE_DEVICES=1   # force GPU 1
+    runtime: nvidia
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "main_ssh.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  tg_bot:
+    build: ./tg_bot
+    container_name: tg_bot
+    volumes:
+      - ./output:/app/output   # share output images
+    env_file:
+      - ./tg_bot/.env
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "bot.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  sys_monitor:
+    build: ./sys_monitor
+    container_name: sys_monitor
+    volumes:
+      - ./output:/app/output
+    env_file:
+      - ./tg_bot/.env
+    runtime: nvidia
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb"  # allow UPS detection
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

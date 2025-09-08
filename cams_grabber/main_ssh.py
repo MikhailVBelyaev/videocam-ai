@@ -2,9 +2,17 @@ import cv2
 from ultralytics import YOLO
 from collections import Counter
 import logging
+import sys
 from datetime import datetime
 
-# Disable Ultralytics logging
+# Configure logging for Docker
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    stream=sys.stdout,
+)
+
+# Disable extra Ultralytics logging
 logging.getLogger("ultralytics").setLevel(logging.WARNING)
 
 # Load YOLOv8 model
@@ -27,7 +35,7 @@ CONF_THRESHOLD = 0.6  # minimum confidence
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        print("⚠️ Failed to grab frame")
+        logging.warning("⚠️ Failed to grab frame")
         break
 
     # Run inference
@@ -54,12 +62,13 @@ while cap.isOpened():
         # Confirm only after stable for N frames
         if stability_counter >= STABILITY_FRAMES:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"🕒 {timestamp} | 🔔 Change detected! {dict(counts)}")
+            logging.info(f"🕒 {timestamp} | 🔔 Change detected! {dict(counts)}")
 
             # Save only if at least 1 person or car detected
             if sum(counts.values()) > 0:
-                cv2.imwrite(f"output/frame_{frame_id}.jpg", annotated)
-                print(f"✅ Saved output/frame_{timestamp}_{dict(counts)}.jpg")
+                filename = f"output/frame_{timestamp}_{dict(counts)}.jpg"
+                cv2.imwrite(filename, annotated)
+                logging.info(f"✅ Saved {filename}")
 
             prev_counts = counts
             stability_counter = 0
