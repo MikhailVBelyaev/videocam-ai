@@ -45,7 +45,9 @@ services:
       - ./output:/app/output
     env_file:
       - ./tg_bot/.env
-    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    gpus: all
     devices:
       - "/dev/bus/usb:/dev/bus/usb"  # allow UPS detection
     restart: always
