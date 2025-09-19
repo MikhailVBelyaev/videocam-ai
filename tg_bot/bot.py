@@ -65,6 +65,10 @@ def main():
     while True:
         try:
             for file in sorted(os.listdir(OUTPUT_DIR)):
+                if file.startswith('.'):
+                    continue
+                if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    continue
                 path = os.path.join(OUTPUT_DIR, file)
                 if path not in sent_files and os.path.isfile(path):
                     if send_photo(path):
