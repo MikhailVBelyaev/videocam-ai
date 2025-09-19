@@ -1,6 +1,6 @@
 import cv2
 from ultralytics import YOLO
-from collections import Counter
+from collections import Counter, defaultdict
 import logging
 import sys
 from datetime import datetime
@@ -23,14 +23,17 @@ rtsp_url = "rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101"
 cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
 
 frame_id = 0
-prev_counts = Counter()  # last stable state
+prev_counts = Counter()  # last confirmed counts
 pending_counts = None
 stability_counter = 0
 STABILITY_FRAMES = 5  # require 5 consecutive frames before confirming change
 
 # Keep only these classes
 TARGET_CLASSES = {"car", "person"}
-CONF_THRESHOLD = 0.6  # minimum confidence
+CONF_THRESHOLD = 0.58  # allow slightly lower confidence to reduce false negatives
+
+# Track previous detections to avoid duplicates
+last_detected_ids = defaultdict(set)  # {class_name: set of object IDs}
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -38,12 +41,11 @@ while cap.isOpened():
         logging.warning("⚠️ Failed to grab frame")
         break
 
-    # Run inference
     results = model(frame, verbose=False)
     annotated = results[0].plot()
-
-    # Filter by class AND confidence
     class_names = results[0].names
+
+    # Extract detected objects
     detected_classes = [
         class_names[int(c)]
         for c, conf in zip(results[0].boxes.cls, results[0].boxes.conf)
@@ -51,7 +53,7 @@ while cap.isOpened():
     ]
     counts = Counter(detected_classes)
 
-    # If different from stable state
+    # Stability check
     if counts != prev_counts:
         if counts == pending_counts:
             stability_counter += 1
@@ -59,12 +61,11 @@ while cap.isOpened():
             pending_counts = counts
             stability_counter = 1
 
-        # Confirm only after stable for N frames
         if stability_counter >= STABILITY_FRAMES:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             logging.info(f"🕒 {timestamp} | 🔔 Change detected! {dict(counts)}")
 
-            # Save only if at least 1 person or car detected
+            # Save frame only if at least 1 target object detected
             if sum(counts.values()) > 0:
                 filename = f"output/frame_{timestamp}_{dict(counts)}.jpg"
                 cv2.imwrite(filename, annotated)

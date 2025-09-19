@@ -24,6 +24,7 @@ services:
     container_name: tg_bot
     volumes:
       - ./output:/app/output   # share output images
+      - ./tg_bot/bot.py:/app/bot.py:cached  # mount local bot.py
     env_file:
       - ./tg_bot/.env
     restart: always
@@ -43,6 +44,7 @@ services:
     container_name: sys_monitor
     volumes:
       - ./output:/app/output
+      - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached 
     env_file:
       - ./tg_bot/.env
     environment:
