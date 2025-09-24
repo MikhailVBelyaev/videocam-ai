@@ -4,6 +4,7 @@ services:
     container_name: cams_grabber
     volumes:
       - ./output:/app/output   # persistent folder
+      - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
     environment:
       - CUDA_VISIBLE_DEVICES=1   # force GPU 1
     runtime: nvidia
@@ -52,6 +53,20 @@ services:
     gpus: all
     devices:
       - "/dev/bus/usb:/dev/bus/usb"  # allow UPS detection
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  web_viewer:
+    image: nginx:alpine
+    container_name: web_viewer
+    volumes:
+      - ./output:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
     restart: always
     logging:
       driver: "json-file"
