@@ -49,23 +49,35 @@ def get_gpu_stats():
         return f"GPU info error: {e}"
 
 def get_ups_status():
-    """Get UPS state and percentage via upower."""
+    """Read UPS status from a host-generated file (avoid upower in Docker)."""
     try:
-        # Adjust the path for your UPS device
-        ups_path = "/org/freedesktop/UPower/devices/ups_hiddev0"
-        output = subprocess.check_output(["upower", "-i", ups_path], text=True).strip()
-        state, percent = None, None
-        for line in output.splitlines():
-            line = line.strip()
-            if line.startswith("state:"):
-                state = line.split("state:")[1].strip()
-            elif line.startswith("percentage:"):
-                percent = line.split("percentage:")[1].strip()
-        if state and percent:
-            return f"UPS: {state} | {percent}"
-        return "UPS: Not detected"
+        ups_file = "/app/ups_status.txt"
+        if not os.path.exists(ups_file):
+            return "UPS info: File not found"
+        with open(ups_file, "r") as f:
+            lines = [line.strip() for line in f.readlines()]
+        return "\n".join(lines) if lines else "UPS info: Empty file"
     except Exception as e:
         return f"UPS info error: {e}"
+
+def get_cpu_temps():
+    """Get CPU package temperature using sensors command."""
+    try:
+        output = subprocess.check_output(["sensors"], text=True)
+        package_temp = None
+        for line in output.splitlines():
+            line = line.strip()
+            if "Package id 0:" in line:
+                # Example: Package id 0:  +58.0°C  (high = +80.0°C, crit = +100.0°C)
+                parts = line.split()
+                for part in parts:
+                    if part.startswith("+") and part.endswith("°C"):
+                        package_temp = part.strip("+").replace("°C", "")
+                        break
+        cpu_temp_str = f"CPU Package Temp: {package_temp}°C" if package_temp else "CPU Package Temp: N/A"
+        return cpu_temp_str
+    except Exception as e:
+        return f"CPU temp info error: {e}"
 
 def main():
     """Main monitoring loop (runs every hour)."""
@@ -75,13 +87,15 @@ def main():
         disk = psutil.disk_usage("/")
         gpu = get_gpu_stats()
         ups = get_ups_status()
+        cpu_temps = get_cpu_temps()
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         msg = (
-            f"🖥 System Report {timestamp}\n"
-            f"CPU: {cpu}%\n"
-            f"RAM: {ram.percent}% ({ram.used // (1024**2)}MB/{ram.total // (1024**2)}MB)\n"
-            f"Disk: {disk.percent}% ({disk.used // (1024**3)}GB/{disk.total // (1024**3)}GB)\n"
+            f"🖥 System Report - {timestamp}\n"
+            f"CPU Usage: {cpu}%\n"
+            f"{cpu_temps}\n"
+            f"RAM Usage: {ram.percent}% ({ram.used // (1024**2)}MB / {ram.total // (1024**2)}MB)\n"
+            f"Disk Usage: {disk.percent}% ({disk.used // (1024**3)}GB / {disk.total // (1024**3)}GB)\n"
             f"{gpu}\n"
             f"{ups}"
         )

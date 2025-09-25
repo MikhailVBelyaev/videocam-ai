@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system deps
 RUN apt-get update && apt-get install -y \
- python3 python3-pip upower \
+ python3 python3-pip upower lm-sensors \
 && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
