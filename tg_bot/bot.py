@@ -7,6 +7,7 @@ from datetime import datetime
 import pytz
 from PIL import Image
 import imagehash
+import shutil
 
 # Setup logging for Docker (stdout) with Tashkent timezone
 class TashkentFormatter(logging.Formatter):
@@ -28,14 +29,44 @@ logger.setLevel(logging.INFO)
 logger.addHandler(handler)
 
 OUTPUT_DIR = "output"
-STATE_FILE = os.path.join(OUTPUT_DIR, ".sent_files")
+LAST_SENT_FILE = os.path.join(OUTPUT_DIR, ".last_sent_file")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+KEEP_DAYS = 3
+def cleanup_old_folders():
+    """
+    Remove old dated folders in OUTPUT_DIR, keeping only the most recent KEEP_DAYS.
+    Only directories with names like YYYY-MM-DD are considered.
+    """
+    try:
+        entries = os.listdir(OUTPUT_DIR)
+        date_dirs = []
+        for entry in entries:
+            full_path = os.path.join(OUTPUT_DIR, entry)
+            if os.path.isdir(full_path):
+                try:
+                    # Check if name is a date like YYYY-MM-DD
+                    datetime.strptime(entry, "%Y-%m-%d")
+                    date_dirs.append(entry)
+                except ValueError:
+                    continue
+        date_dirs_sorted = sorted(date_dirs)
+        to_delete = date_dirs_sorted[:-KEEP_DAYS] if len(date_dirs_sorted) > KEEP_DAYS else []
+        for entry in to_delete:
+            full_path = os.path.join(OUTPUT_DIR, entry)
+            try:
+                shutil.rmtree(full_path)
+                logger.info(f"🗑️ Deleted old folder: {full_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete folder {full_path}: {e}")
+    except Exception as e:
+        logger.error(f"Error during cleanup_old_folders: {e}")
 
 if not BOT_TOKEN or not CHAT_ID:
     raise ValueError("❌ TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be set as env variables")
 
 LAST_SENT_IMAGE = None
+LAST_SENT_FOLDER = None
 
 def are_images_similar(img1_path, img2_path, threshold=5):
     """Compare two images using perceptual hash and return True if similar within threshold."""
@@ -50,59 +81,111 @@ def are_images_similar(img1_path, img2_path, threshold=5):
         logger.error(f"Error comparing images {img1_path} and {img2_path}: {e}")
         return False
 
-def load_sent_files():
-    """Load already sent files from state file"""
-    if not os.path.exists(STATE_FILE):
-        return set()
-    with open(STATE_FILE, "r") as f:
-        return set(line.strip() for line in f if line.strip())
+def load_last_sent_file():
+    """Load the last sent folder and file path from the state file"""
+    if not os.path.exists(LAST_SENT_FILE):
+        return None, None
+    with open(LAST_SENT_FILE, "r") as f:
+        line = f.read().strip()
+        if line:
+            parts = line.split('/', 1)
+            if len(parts) == 2:
+                folder, filename = parts
+                return folder, os.path.join(OUTPUT_DIR, folder, filename)
+            else:
+                return None, None
+        else:
+            return None, None
 
-def save_sent_file(file_path: str):
-    """Append a new sent file to state file"""
-    rel_path = os.path.relpath(file_path, OUTPUT_DIR)
-    with open(STATE_FILE, "a") as f:
-        f.write(rel_path + "\n")
+def save_last_sent_file(folder: str, file_path: str):
+    """Save the last sent folder and file path to the state file"""
+    rel_path = os.path.relpath(file_path, os.path.join(OUTPUT_DIR, folder))
+    with open(LAST_SENT_FILE, "w") as f:
+        f.write(f"{folder}/{rel_path}\n")
 
 def send_photo(file_path: str):
-    global LAST_SENT_IMAGE
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     with open(file_path, "rb") as photo:
         res = requests.post(url, data={"chat_id": CHAT_ID}, files={"photo": photo})
     if res.status_code == 200:
         logger.info(f"✅ Sent {file_path} to Telegram")
-        rel_path = os.path.relpath(file_path, OUTPUT_DIR)
-        save_sent_file(rel_path)
+        # Extract folder from file_path
+        folder = os.path.relpath(os.path.dirname(file_path), OUTPUT_DIR)
+        save_last_sent_file(folder, file_path)
         LAST_SENT_IMAGE = file_path
+        LAST_SENT_FOLDER = folder
         return True
     else:
         logger.error(f"⚠️ Failed to send {file_path}: {res.text}")
         return False
 
 def main():
-    global LAST_SENT_IMAGE
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER
     logger.info("📡 Telegram bot started, watching for new files...")
-    sent_files = load_sent_files()
-    logger.info(f"Loaded {len(sent_files)} previously sent files from state")
+    LAST_SENT_FOLDER, LAST_SENT_IMAGE = load_last_sent_file()
+    if LAST_SENT_IMAGE:
+        logger.info(f"Loaded last sent file from state: {LAST_SENT_IMAGE}")
+    else:
+        logger.info("No previously sent file found in state")
 
     while True:
         try:
-            for root, _, files in os.walk(OUTPUT_DIR):
-                for file in sorted(files):
-                    if file.startswith('.'):
+            # List subfolders in OUTPUT_DIR with valid date names
+            subfolders = []
+            for entry in os.listdir(OUTPUT_DIR):
+                full_path = os.path.join(OUTPUT_DIR, entry)
+                if os.path.isdir(full_path):
+                    try:
+                        datetime.strptime(entry, "%Y-%m-%d")
+                        subfolders.append(entry)
+                    except ValueError:
                         continue
-                    if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
+            if not subfolders:
+                time.sleep(5)
+                continue
+            subfolders.sort()
+
+            # Determine which folder to process
+            if LAST_SENT_FOLDER and LAST_SENT_FOLDER in subfolders:
+                folder_index = subfolders.index(LAST_SENT_FOLDER)
+            else:
+                folder_index = len(subfolders) - 1  # Latest folder
+
+            current_folder = subfolders[folder_index]
+            folder_path = os.path.join(OUTPUT_DIR, current_folder)
+
+            # List image files in the current folder
+            image_files = []
+            for file in os.listdir(folder_path):
+                if file.startswith('.'):
+                    continue
+                if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    continue
+                image_files.append(file)
+            image_files.sort()
+
+            start_index = 0
+            if LAST_SENT_IMAGE is not None and LAST_SENT_FOLDER == current_folder:
+                last_sent_filename = os.path.basename(LAST_SENT_IMAGE)
+                try:
+                    start_index = image_files.index(last_sent_filename) + 1
+                except ValueError:
+                    start_index = 0
+
+            for filename in image_files[start_index:]:
+                path = os.path.join(folder_path, filename)
+                if os.path.isfile(path):
+                    if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path):
+                        logger.info(f"⚠️ Skipped {filename} (too similar to last sent image)")
                         continue
-                    path = os.path.join(root, file)
-                    rel_path = os.path.relpath(path, OUTPUT_DIR)
-                    if rel_path not in sent_files and os.path.isfile(path):
-                        if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path):
-                            logger.info(f"⚠️ Skipped {file} (too similar to last sent image)")
-                            continue
-                        if send_photo(path):
-                            sent_files.add(rel_path)
+                    if send_photo(path):
+                        # LAST_SENT_IMAGE and state file updated inside send_photo
+                        pass
         except Exception as e:
             logger.exception(f"Unexpected error: {e}")
 
+        cleanup_old_folders()
         time.sleep(5)  # check every 5s
 
 if __name__ == "__main__":
