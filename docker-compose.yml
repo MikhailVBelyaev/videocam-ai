@@ -45,14 +45,13 @@ services:
     container_name: sys_monitor
     volumes:
       - ./output:/app/output
-      - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached 
+      - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
+      - ./sys_monitor/ups_status.txt:/app/ups_status.txt
     env_file:
       - ./tg_bot/.env
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
     gpus: all
-    devices:
-      - "/dev/bus/usb:/dev/bus/usb"  # allow UPS detection
     restart: always
     logging:
       driver: "json-file"

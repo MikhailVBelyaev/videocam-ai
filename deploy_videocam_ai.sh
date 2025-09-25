@@ -38,5 +38,10 @@ else
     echo "🚀 Rebuilding and restarting containers for services: $* on $TARGET_SERVER..."
     ssh "$TARGET_SERVER" "cd $REMOTE_DIR && docker compose up -d --build $*"
   fi
-  echo "✅ Deployment finished for $PROJECT_NAME (services: $*)"
+echo "✅ Deployment finished for $PROJECT_NAME (services: $*)"
 fi
+
+echo "⚡ Ensuring cron job for UPS monitor exists on $TARGET_SERVER..."
+ssh "$TARGET_SERVER" "crontab -l 2>/dev/null | grep -Fq '$REMOTE_DIR/ups_monitor.sh' || (crontab -l 2>/dev/null; echo '* * * * * /bin/bash $REMOTE_DIR/ups_monitor.sh') | crontab -"
+ssh "$TARGET_SERVER" "systemctl is-active --quiet cron && echo '✅ Cron already running' || echo '⚠️ Cron not running, please check manually'"
+echo "✅ UPS monitor cron job ensured"
