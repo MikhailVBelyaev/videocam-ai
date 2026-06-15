@@ -1,0 +1,18 @@
+project:
+  name: videocam-ai
+  status: active
+  priority: medium
+repo:
+  github: git@github.com:MikhailVBelyaev/videocam-ai.git
+path: ~/Projects/videocam-ai
+current_goal: design the approved camera snapshot triage pipeline
+next_actions: &id001
+- Begin TASK-002 design for modules, data flow, and interfaces.
+- Preserve the approved TASK-001 scope and explicit exclusions.
+next_tasks: *id001
+risks:
+- medium
+risk: medium
+risk_level: medium
+ideas_count: 1
+last_updated: '2026-06-15'
