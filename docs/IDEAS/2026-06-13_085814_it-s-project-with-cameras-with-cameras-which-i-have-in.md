@@ -13,7 +13,7 @@ it’s project with cameras with cameras which I have in my house and I need to 
 
 - Current state: active
 - Priority: medium
-- Current goal: Design the approved camera snapshot triage pipeline.
+- Current goal: Review TASK-005 documentation closeout package.
 - Known blockers: none
 
 ## Decomposed Tasks
@@ -50,16 +50,17 @@ Explicit exclusions:
 - No multi-camera orchestration in this task.
 
 ### TASK-002: Design it’s project with cameras with cameras which I have in
-Status: pending
+Status: review_required
 Type: planning
 Success criteria:
 - List affected services, modules, data flows, and interfaces.
 - Document the implementation approach and key tradeoffs.
 Notes:
 - Keep the task small enough for one Codex session.
+- Design package prepared in `docs/SNAPSHOT_TRIAGE_DESIGN.md` for supervised human review.
 
 ### TASK-003: Implement it’s project with cameras with cameras which I have in
-Status: pending
+Status: review_required
 Type: implementation
 Success criteria:
 - Implement one reviewable increment that satisfies the core acceptance criteria.
@@ -68,7 +69,7 @@ Notes:
 - Keep the task small enough for one Codex session.
 
 ### TASK-004: Validate it’s project with cameras with cameras which I have in
-Status: pending
+Status: review_required
 Type: test
 Success criteria:
 - Add focused tests for the new behavior and important failure cases.
@@ -77,7 +78,7 @@ Notes:
 - Keep the task small enough for one Codex session.
 
 ### TASK-005: Document it’s project with cameras with cameras which I have in
-Status: pending
+Status: review_required
 Type: documentation
 Success criteria:
 - Document the implemented behavior, configuration, and operating steps.
@@ -97,4 +98,4 @@ Notes:
 
 ## Suggested Next Action
 
-TASK-001 scope is approved. Start TASK-002 design for module boundaries and data flow.
+Review TASK-005 documentation package; if accepted, decide project closeout or explicitly open a new prepared follow-up task.
