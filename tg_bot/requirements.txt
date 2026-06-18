@@ -1,5 +1,5 @@
 requests
-python-telegram-bot==20.6
+python-telegram-bot[job-queue]==20.6
 pytz
 Pillow
 ImageHash
