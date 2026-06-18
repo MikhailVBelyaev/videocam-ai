@@ -5,14 +5,26 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: review published snapshot triage package and decide next follow-up
-next_actions: &id001
-- Review the published TASK-002 through TASK-005 snapshot triage package.
-- Decide project closeout or any new prepared follow-up jobs outside current exclusions.
-next_tasks: *id001
+current_goal: TASK-003 Phase A (object detection) implementation for Job ID 2026-06-17_172653 complete; awaiting human review.
+next_actions:
+- Review the TASK-003 Phase A implementation diff for `cams_grabber/snapshot_triage.py`,
+  `tests/test_snapshot_triage.py`, `README.md`, and `docs/SNAPSHOT_TRIAGE_RUNBOOK.md`.
+- Verify object detection integration is correct and test coverage is adequate.
+- Verify graceful fallback when model files are missing.
+- Verify CSV and JSON schema extensions match the design doc.
+- Decide whether to accept, revise, or reject the implementation.
+- If accepted, prepare a TASK-003 implementation job for Phase B (enhanced quality metrics).
+- Continue reviewing TASK-004/005 increments as needed.
+next_tasks:
+- Review the TASK-003 Phase A implementation for correctness and completeness.
+- Review the TASK-002 design doc for Phase B (enhanced quality metrics).
+- Review the TASK-005 documentation diff for README.md, docs/PROJECT_STATUS_MEMORY.md,
+  docs/NEXT_ACTIONS.md, docs/DEVELOPMENT_LOG.md, and docs/PROJECT_MANAGER.yaml.
+- Verify that README accurately describes all implemented CLI flags and outputs.
+- Verify that project status docs reflect the current implementation state.
 risks:
 - medium
 risk: medium
 risk_level: medium
-ideas_count: 1
-last_updated: '2026-06-16'
+ideas_count: 2
+last_updated: '2026-06-18'
