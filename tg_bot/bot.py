@@ -32,6 +32,8 @@ handler.setFormatter(formatter)
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(handler)
+for noisy_logger in ("httpx", "httpcore", "telegram", "apscheduler.executors.default"):
+    logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
 OUTPUT_DIR = "output"
 LAST_SENT_FILE = os.path.join(OUTPUT_DIR, ".last_sent_file")

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import tempfile
 import unittest
@@ -17,6 +18,10 @@ from tg_bot.bot import (
 
 
 class TgBotAdminTests(unittest.TestCase):
+    def test_telegram_http_transport_logs_are_suppressed(self):
+        for logger_name in ("httpx", "httpcore", "telegram"):
+            self.assertGreaterEqual(logging.getLogger(logger_name).level, logging.WARNING)
+
     def test_format_admin_message_with_all_fields(self):
         summary = {
             "total_images": 150,
