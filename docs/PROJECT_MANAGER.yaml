@@ -5,17 +5,27 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: TASK-003 Phase A (object detection) implementation for Job ID 2026-06-17_172653 complete; awaiting human review.
+current_goal: TASK-005 documentation for the Telegram /admin command (Job ID 2026-06-18_115153) complete; awaiting human review. TASK-001 scope, TASK-002 design, TASK-003 implementation, and TASK-004 QA for /admin command previously completed and in review_required.
 next_actions:
+- Review the TASK-003 implementation diff for `tg_bot/bot.py`, `tests/test_tg_bot.py`,
+  `tg_bot/__init__.py`, and `README.md`.
+  - Verify `/admin` command returns formatted summary with total_images, kept_images,
+    car_count, person_count from latest `triage_summary.json`.
+  - Verify missing/malformed `triage_summary.json` yields "No triage data available."
+  - Verify non-admin chats are silently ignored.
+  - Verify existing image-sending behavior is unchanged (no regression).
+  - Decide whether to accept, revise, or reject the implementation.
+- Review the TASK-005 documentation diff for `README.md`, `docs/PROJECT_STATUS_MEMORY.md`,
+  `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml`.
+  - Verify README accurately describes env vars, `/admin` behavior, and operating steps.
+  - Verify project status docs reflect the current implementation state.
+  - Decide whether to accept, revise, or reject the documentation.
 - Review the TASK-003 Phase A implementation diff for `cams_grabber/snapshot_triage.py`,
   `tests/test_snapshot_triage.py`, `README.md`, and `docs/SNAPSHOT_TRIAGE_RUNBOOK.md`.
-- Verify object detection integration is correct and test coverage is adequate.
-- Verify graceful fallback when model files are missing.
-- Verify CSV and JSON schema extensions match the design doc.
-- Decide whether to accept, revise, or reject the implementation.
-- If accepted, prepare a TASK-003 implementation job for Phase B (enhanced quality metrics).
+- Review the TASK-002 design doc `docs/TASK002_IMPROVE_IMAGE_QUALITY_STATISTICS_DESIGN.md`.
 - Continue reviewing TASK-004/005 increments as needed.
 next_tasks:
+- Review the TASK-003 implementation for the Telegram `/admin` command.
 - Review the TASK-003 Phase A implementation for correctness and completeness.
 - Review the TASK-002 design doc for Phase B (enhanced quality metrics).
 - Review the TASK-005 documentation diff for README.md, docs/PROJECT_STATUS_MEMORY.md,

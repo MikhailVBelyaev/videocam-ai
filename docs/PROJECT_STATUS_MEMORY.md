@@ -8,6 +8,15 @@ just scan it, and prepare for agent's work
 
 ## Latest Update
 
+- TASK-005 documentation for the Telegram `/admin` command is complete and in
+  `review_required`. Verified `README.md` against `tg_bot/bot.py`; added operating
+  steps; updated project status docs.
+- TASK-003 implementation of the Telegram `/admin` command is complete and in
+  `review_required`. Refactored `tg_bot/bot.py` to `python-telegram-bot`
+  Application with JobQueue; added `/admin` handler with admin restriction,
+  triage summary formatting, and graceful error handling.
+- Added 12 focused tests in `tests/test_tg_bot.py`; all pass alongside 52 existing
+  snapshot triage tests.
 - TASK-001 scope was defined for the camera snapshot quality triage increment.
 - Scope now includes a minimum deliverable, measurable acceptance criteria, and explicit exclusions.
 - TASK-003 implementation of Phase A (object detection and statistics) is complete

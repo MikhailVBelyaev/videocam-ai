@@ -82,6 +82,41 @@ Validate the pipeline:
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+## Telegram bot
+
+The `tg_bot` service sends new camera frames to Telegram and responds to the `/admin` command.
+
+Environment variables (set in `tg_bot/.env`):
+
+- `TELEGRAM_TOKEN` — bot token from BotFather
+- `TELEGRAM_CHAT_ID` — default chat ID for image posts
+- `TELEGRAM_ADMIN_CHAT_ID` — optional chat ID authorized for `/admin` (falls back to `TELEGRAM_CHAT_ID`)
+
+Commands:
+
+- `/admin` — returns a single-page summary from the latest `output/triage_summary.json`:
+  - latest run date and freshness indicator
+  - total and kept image counts
+  - car and person counts (when object detection is enabled)
+  - missing expected object count (if any)
+
+Non-admin chats are silently ignored.
+
+Run the bot locally (ensure `output/` exists and `tg_bot/.env` is configured):
+
+```bash
+.venv/bin/python -m pip install -r tg_bot/requirements.txt
+.venv/bin/python tg_bot/bot.py
+```
+
+Or start via Docker Compose:
+
+```bash
+docker compose up -d tg_bot
+```
+
+The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_ID`.
+
 Full operating details, tuning guidance, JSON schema, and limitations are in:
 
 - `docs/SNAPSHOT_TRIAGE_RUNBOOK.md`

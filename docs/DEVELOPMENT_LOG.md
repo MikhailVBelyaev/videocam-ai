@@ -2,6 +2,94 @@
 
 ## 2026-06-18 (Docs)
 
+- Completed TASK-005 documentation for "add to tg service /admin command and show 1"
+  (Job ID: 2026-06-18_115153_videocam-ai-add-to-tg-service-admin-command-and-show-1-task-005).
+  - Verified `README.md` Telegram bot section against implemented behavior in `tg_bot/bot.py`.
+  - Added operating steps: local install from `tg_bot/requirements.txt`, Docker Compose start,
+    and background polling interval (5 seconds).
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`, and `docs/PROJECT_MANAGER.yaml`
+    to reflect TASK-005 completion.
+  - Ran `.venv/bin/python -m py_compile tg_bot/bot.py tests/test_tg_bot.py` (clean).
+  - Ran `.venv/bin/python -m unittest -v tests/test_tg_bot.py` (23 tests, pass).
+  - Ran `.venv/bin/python -m unittest -v tests/test_snapshot_triage.py` (52 tests, pass).
+  - Status: `review_required`.
+
+## 2026-06-18 (QA)
+
+- Completed TASK-004 QA validation for the Telegram /admin command
+  (Job ID: 2026-06-18_115153_videocam-ai-add-to-tg-service-admin-command-and-show-1-task-004).
+  - Added 11 focused QA tests in `tests/test_tg_bot.py` covering:
+    - `_format_admin_message`: empty missing_expected_objects list, missing total_objects_by_type key
+    - `_is_fresh`: today-is-fresh, two-days-ago-is-stale, invalid date string
+    - `_get_latest_run_date`: empty output directory
+    - `_read_latest_summary`: OSError (permission denied)
+    - `_is_admin_chat`: string-vs-int type coercion
+    - `admin_command`: non-admin silent return, admin no-data reply, admin with-data Markdown reply
+  - All 23 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+  - No source code changes required; all tests validate existing behavior.
+  - Fixed initial test edge-case bugs: async mock for `reply_text`, boundary-correct
+    `_is_fresh` assertions (date-at-midnight boundary).
+  - Status: `review_required`.
+
+## 2026-06-18 (Implementation)
+
+- Completed TASK-003 implementation for "add to tg service /admin command and show 1"
+  (Job ID: 2026-06-18_115153_videocam-ai-add-to-tg-service-admin-command-and-show-1-task-003).
+  - Refactored `tg_bot/bot.py` from raw `requests` polling to `python-telegram-bot`
+    Application with JobQueue.
+  - Added `/admin` CommandHandler restricted to `TELEGRAM_ADMIN_CHAT_ID`
+    (falls back to `TELEGRAM_CHAT_ID`).
+  - Added helper functions: `_is_admin_chat()`, `_read_latest_summary()`,
+    `_get_latest_run_date()`, `_is_fresh()`, `_format_admin_message()`.
+  - `/admin` composes a single Markdown message from `output/triage_summary.json`
+    with latest run date, freshness indicator, total/kept counts, car/person counts,
+    and missing-expected-objects count.
+  - Non-admin chats are silently ignored; missing or malformed JSON yields
+    "No triage data available."
+  - Existing image-sending behavior preserved as a background job
+    (`image_sender_job` → `_send_new_images_iteration` via `asyncio.to_thread`).
+  - Created `tests/test_tg_bot.py` with 12 focused unit tests covering:
+    - `_format_admin_message` with all fields and with defaults
+    - `_is_admin_chat` matching and non-matching IDs
+    - `_read_latest_summary` success, missing file, malformed JSON
+    - `_get_latest_run_date` max date selection and no valid folders
+    - `_is_fresh` within 24h, stale, and None
+  - All 12 new tests pass; all 52 existing snapshot triage tests pass.
+  - `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+  - Updated `README.md` with Telegram bot section documenting env vars and `/admin`.
+  - Added `tg_bot/__init__.py` to make the package importable for tests.
+  - Status: `review_required`.
+
+## 2026-06-18 (Design)
+
+- Completed TASK-002 design for "add to tg service /admin command and show 1"
+  (Job ID: 2026-06-18_115153_videocam-ai-add-to-tg-service-admin-command-and-show-1-task-002).
+  - Documented affected services (`tg_bot/bot.py` primary; `snapshot_triage.py` read-only consumer),
+    modules, data flows, and interfaces in `docs/TG_ADMIN_COMMAND_DESIGN.md`.
+  - Recommended `python-telegram-bot` Application with JobQueue as the implementation
+    architecture; rejected raw-requests and hybrid-threading alternatives.
+  - Documented 4 key tradeoffs: command handling library, admin authorization model,
+    data freshness strategy, and message formatting.
+  - Validation plan covers syntax checks, new unit tests for formatting/auth/errors,
+    existing triage test suite regression check, and manual smoke tests.
+  - Status: `review_required`.
+
+## 2026-06-18 (Planning)
+
+- Completed TASK-001 scope definition for "add to tg service /admin command and show 1"
+  (Job ID: 2026-06-18_115153_videocam-ai-add-to-tg-service-admin-command-and-show-1-task-001).
+  - Defined minimum deliverable: `/admin` command in `tg_bot/bot.py` that returns
+    a single-page summary with latest triage stats (total images, kept images,
+    car/person counts), freshness indicator, and admin-chat restriction.
+  - Recorded measurable acceptance criteria and explicit exclusions in
+    `docs/TG_ADMIN_COMMAND_SCOPE.md`.
+  - Documented risks: library mismatch (raw requests vs python-telegram-bot),
+    JSON schema dependency, and empty output mount.
+  - Status: `review_required`.
+
+## 2026-06-18 (Docs)
+
 - Completed TASK-005 documentation verification for "Improve production image quality
   and statistics" (Job ID: 2026-06-17_172653_videocam-ai-improve-production-image-quality-and-statistics-task-005).
   - Verified `README.md` and `docs/SNAPSHOT_TRIAGE_RUNBOOK.md` against the

@@ -3,11 +3,16 @@ import time
 import requests
 import logging
 import sys
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 import pytz
 from PIL import Image
 import imagehash
 import shutil
+import asyncio
+
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Setup logging for Docker (stdout) with Tashkent timezone
 class TashkentFormatter(logging.Formatter):
@@ -32,7 +37,10 @@ OUTPUT_DIR = "output"
 LAST_SENT_FILE = os.path.join(OUTPUT_DIR, ".last_sent_file")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID") or CHAT_ID
 KEEP_DAYS = 3
+
+
 def cleanup_old_folders():
     """
     Remove old dated folders in OUTPUT_DIR, keeping only the most recent KEEP_DAYS.
@@ -62,11 +70,6 @@ def cleanup_old_folders():
     except Exception as e:
         logger.error(f"Error during cleanup_old_folders: {e}")
 
-if not BOT_TOKEN or not CHAT_ID:
-    raise ValueError("❌ TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be set as env variables")
-
-LAST_SENT_IMAGE = None
-LAST_SENT_FOLDER = None
 
 def are_images_similar(img1_path, img2_path, threshold=5):
     """Compare two images using perceptual hash and return True if similar within threshold."""
@@ -80,6 +83,7 @@ def are_images_similar(img1_path, img2_path, threshold=5):
     except Exception as e:
         logger.error(f"Error comparing images {img1_path} and {img2_path}: {e}")
         return False
+
 
 def load_last_sent_file():
     """Load the last sent folder and file path from the state file"""
@@ -97,11 +101,13 @@ def load_last_sent_file():
         else:
             return None, None
 
+
 def save_last_sent_file(folder: str, file_path: str):
     """Save the last sent folder and file path to the state file"""
     rel_path = os.path.relpath(file_path, os.path.join(OUTPUT_DIR, folder))
     with open(LAST_SENT_FILE, "w") as f:
         f.write(f"{folder}/{rel_path}\n")
+
 
 def send_photo(file_path: str):
     global LAST_SENT_IMAGE, LAST_SENT_FOLDER
@@ -120,8 +126,183 @@ def send_photo(file_path: str):
         logger.error(f"⚠️ Failed to send {file_path}: {res.text}")
         return False
 
+
+# ---------------------------------------------------------------------------
+# /admin command helpers
+# ---------------------------------------------------------------------------
+
+def _is_admin_chat(update: Update) -> bool:
+    """Return True if the incoming update is from the configured admin chat."""
+    chat_id = str(update.effective_chat.id)
+    return chat_id == str(ADMIN_CHAT_ID)
+
+
+def _read_latest_summary() -> dict | None:
+    """Read and parse output/triage_summary.json, or None if missing/malformed."""
+    path = os.path.join(OUTPUT_DIR, "triage_summary.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _get_latest_run_date() -> str | None:
+    """Return the most recent YYYY-MM-DD folder name in OUTPUT_DIR, or None."""
+    try:
+        entries = os.listdir(OUTPUT_DIR)
+        date_dirs = []
+        for entry in entries:
+            full_path = os.path.join(OUTPUT_DIR, entry)
+            if os.path.isdir(full_path):
+                try:
+                    datetime.strptime(entry, "%Y-%m-%d")
+                    date_dirs.append(entry)
+                except ValueError:
+                    continue
+        if not date_dirs:
+            return None
+        return max(date_dirs)
+    except OSError:
+        return None
+
+
+def _is_fresh(run_date: str | None) -> bool:
+    """Return True if run_date is within the last 24 hours."""
+    if not run_date:
+        return False
+    try:
+        run_dt = datetime.strptime(run_date, "%Y-%m-%d").replace(tzinfo=pytz.UTC)
+        now = datetime.now(pytz.UTC)
+        return (now - run_dt) <= timedelta(days=1)
+    except ValueError:
+        return False
+
+
+def _format_admin_message(summary: dict, run_date: str | None, fresh: bool) -> str:
+    """Compose a single-page Markdown message for the /admin command."""
+    total = summary.get("total_images", 0)
+    kept = summary.get("kept_images", 0)
+    objects = summary.get("total_objects_by_type", {})
+    car_count = objects.get("car", 0)
+    person_count = objects.get("person", 0)
+    missing = summary.get("missing_expected_objects", [])
+    missing_count = len(missing)
+
+    status = "✅ Fresh (within 24h)" if fresh else "⚠️ Stale"
+    date_str = run_date or "Unknown"
+
+    lines = [
+        "*Admin Summary*",
+        "",
+        f"*Latest run:* {date_str}",
+        f"*Status:* {status}",
+        "",
+        f"*Images:* {total} total, {kept} kept",
+        f"*Objects:* {car_count} cars, {person_count} people",
+    ]
+    if missing_count:
+        lines.append(f"*Missing expected:* {missing_count} frames")
+    return "\n".join(lines)
+
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /admin command: return triage summary to authorized chats only."""
+    if not _is_admin_chat(update):
+        return  # silent ignore for non-admin chats
+
+    summary = _read_latest_summary()
+    run_date = _get_latest_run_date()
+    fresh = _is_fresh(run_date)
+
+    if summary is None:
+        await update.message.reply_text("No triage data available.")
+        return
+
+    text = _format_admin_message(summary, run_date, fresh)
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------------
+# Background image sender (adapted from the original polling loop)
+# ---------------------------------------------------------------------------
+
+LAST_SENT_IMAGE = None
+LAST_SENT_FOLDER = None
+
+
+def _send_new_images_iteration():
+    """One pass of the original image-sending loop (no sleep)."""
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER
+    try:
+        # List subfolders in OUTPUT_DIR with valid date names
+        subfolders = []
+        for entry in os.listdir(OUTPUT_DIR):
+            full_path = os.path.join(OUTPUT_DIR, entry)
+            if os.path.isdir(full_path):
+                try:
+                    datetime.strptime(entry, "%Y-%m-%d")
+                    subfolders.append(entry)
+                except ValueError:
+                    continue
+        if not subfolders:
+            return
+        subfolders.sort()
+
+        # Determine which folder to process
+        if LAST_SENT_FOLDER and LAST_SENT_FOLDER in subfolders:
+            folder_index = subfolders.index(LAST_SENT_FOLDER)
+        else:
+            folder_index = len(subfolders) - 1  # Latest folder
+
+        current_folder = subfolders[folder_index]
+        folder_path = os.path.join(OUTPUT_DIR, current_folder)
+
+        # List image files in the current folder
+        image_files = []
+        for file in os.listdir(folder_path):
+            if file.startswith('.'):
+                continue
+            if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                continue
+            image_files.append(file)
+        image_files.sort()
+
+        start_index = 0
+        if LAST_SENT_IMAGE is not None and LAST_SENT_FOLDER == current_folder:
+            last_sent_filename = os.path.basename(LAST_SENT_IMAGE)
+            try:
+                start_index = image_files.index(last_sent_filename) + 1
+            except ValueError:
+                start_index = 0
+
+        for filename in image_files[start_index:]:
+            path = os.path.join(folder_path, filename)
+            if os.path.isfile(path):
+                if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path):
+                    logger.info(f"⚠️ Skipped {filename} (too similar to last sent image)")
+                    continue
+                if send_photo(path):
+                    # LAST_SENT_IMAGE and state file updated inside send_photo
+                    pass
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+
+    cleanup_old_folders()
+
+
+async def image_sender_job(context: ContextTypes.DEFAULT_TYPE):
+    """Async wrapper that runs the synchronous image-sender in a thread."""
+    await asyncio.to_thread(_send_new_images_iteration)
+
+
 def main():
     global LAST_SENT_IMAGE, LAST_SENT_FOLDER
+    if not BOT_TOKEN or not CHAT_ID:
+        raise ValueError("❌ TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be set as env variables")
+
     logger.info("📡 Telegram bot started, watching for new files...")
     LAST_SENT_FOLDER, LAST_SENT_IMAGE = load_last_sent_file()
     if LAST_SENT_IMAGE:
@@ -129,64 +310,11 @@ def main():
     else:
         logger.info("No previously sent file found in state")
 
-    while True:
-        try:
-            # List subfolders in OUTPUT_DIR with valid date names
-            subfolders = []
-            for entry in os.listdir(OUTPUT_DIR):
-                full_path = os.path.join(OUTPUT_DIR, entry)
-                if os.path.isdir(full_path):
-                    try:
-                        datetime.strptime(entry, "%Y-%m-%d")
-                        subfolders.append(entry)
-                    except ValueError:
-                        continue
-            if not subfolders:
-                time.sleep(5)
-                continue
-            subfolders.sort()
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("admin", admin_command))
+    app.job_queue.run_repeating(image_sender_job, interval=5, first=5)
+    app.run_polling()
 
-            # Determine which folder to process
-            if LAST_SENT_FOLDER and LAST_SENT_FOLDER in subfolders:
-                folder_index = subfolders.index(LAST_SENT_FOLDER)
-            else:
-                folder_index = len(subfolders) - 1  # Latest folder
-
-            current_folder = subfolders[folder_index]
-            folder_path = os.path.join(OUTPUT_DIR, current_folder)
-
-            # List image files in the current folder
-            image_files = []
-            for file in os.listdir(folder_path):
-                if file.startswith('.'):
-                    continue
-                if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
-                    continue
-                image_files.append(file)
-            image_files.sort()
-
-            start_index = 0
-            if LAST_SENT_IMAGE is not None and LAST_SENT_FOLDER == current_folder:
-                last_sent_filename = os.path.basename(LAST_SENT_IMAGE)
-                try:
-                    start_index = image_files.index(last_sent_filename) + 1
-                except ValueError:
-                    start_index = 0
-
-            for filename in image_files[start_index:]:
-                path = os.path.join(folder_path, filename)
-                if os.path.isfile(path):
-                    if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path):
-                        logger.info(f"⚠️ Skipped {filename} (too similar to last sent image)")
-                        continue
-                    if send_photo(path):
-                        # LAST_SENT_IMAGE and state file updated inside send_photo
-                        pass
-        except Exception as e:
-            logger.exception(f"Unexpected error: {e}")
-
-        cleanup_old_folders()
-        time.sleep(5)  # check every 5s
 
 if __name__ == "__main__":
     main()
