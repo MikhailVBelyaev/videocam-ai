@@ -5,8 +5,18 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: 'TASK-004 QA validation for "Fix production Telegram image delivery: bot sends repeated static/latest" complete; awaiting human review. Added 6 focused QA tests in tests/test_tg_bot.py (TgBotTriageAwareQATests): cooldown bypass in kept/ mode, non-kept counter stays zero without kept/ folder, all kept images skipped as similar when cooldown not expired, OSError during non-kept counting swallowed, dotfiles excluded from root fallback, send_photo called with kept/ subfolder path. Total 183 tests pass. py_compile clean. No source code changes required.'
+current_goal: 'TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated static/latest" complete; awaiting human review. Updated docs/TG_BOT_RUNBOOK.md validation counts (103 tg_bot / 183 total), added troubleshooting entries for IMAGE_SIMILARITY_THRESHOLD misconfiguration and non-kept counter behavior. Verified README.md consistency. No source code changes required.'
 next_actions:
+- "Review the TASK-005 documentation diff for docs/TG_BOT_RUNBOOK.md, README.md,"
+- "  docs/PROJECT_STATUS_MEMORY.md, docs/NEXT_ACTIONS.md, docs/DEVELOPMENT_LOG.md,"
+- "  and docs/PROJECT_MANAGER.yaml for the repeated-static fix."
+- "  - Verify validation counts are accurate (103 tg_bot tests, 183 total)."
+- "  - Verify troubleshooting entries for IMAGE_SIMILARITY_THRESHOLD misconfiguration"
+- "    and non-kept counter behavior are accurate."
+- "  - Verify startup behavior section, troubleshooting table, and command descriptions"
+- "    remain accurate against tg_bot/bot.py."
+- "  - Verify README.md Telegram bot section is consistent with implementation."
+- "  - Decide whether to accept, revise, or reject the documentation."
 - "Review the TASK-004 QA diff for tests/test_tg_bot.py."
 - "  Verify TgBotTriageAwareQATests (6 tests) covers: cooldown bypass in kept/ mode,"
 - "    non-kept counter stays zero without kept/ folder, all kept images skipped as"

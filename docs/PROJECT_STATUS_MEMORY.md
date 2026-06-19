@@ -4,20 +4,13 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
-- TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated
-  static/latest" is complete and in `review_required`. Modified `tg_bot/bot.py` to add
-  `IMAGE_SIMILARITY_THRESHOLD` env var (default 10), `_kept_images_exist()` and
-  `_get_image_list()` helpers for triage-aware image selection (preferring `kept/`
-  subfolder, falling back to all images), send statistics counters
-  (`_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT`), triage-aware
-  `_send_new_images_iteration()` skipping similar/duplicate images, and send statistics
-  appended to `/admin`. Added 17 focused tests in `tests/test_tg_bot.py` (4 new test
-  classes: `TgBotKeptImageTests`, `TgBotTriageAwareSenderTests`,
-  `TgBotThresholdEnvTests`, `TgBotSendStatisticsTests`). Updated
-  `docs/TG_BOT_RUNBOOK.md` with `IMAGE_SIMILARITY_THRESHOLD` env var and "Triage-aware
-  Image Sending" section. Updated `README.md` with `IMAGE_SIMILARITY_THRESHOLD` env var
-  and triage-aware paragraph. Total 97 tests pass (including 17 new triage-aware tests).
-  `py_compile` clean.
+- TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated static/latest"
+  is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts to
+  103 tg_bot tests / 183 total tests, added troubleshooting entries for `IMAGE_SIMILARITY_THRESHOLD`
+  misconfiguration (too high, too low) and non-kept counter behavior. Verified `README.md` consistency
+  with `tg_bot/bot.py` implementation. Updated `docs/PROJECT_STATUS_MEMORY.md`,
+  `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml`.
+  All 183 tests pass (103 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.
 
 ## Prior Update
 

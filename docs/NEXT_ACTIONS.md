@@ -4,25 +4,35 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-004 QA validation for "Fix production Telegram image delivery: bot sends repeated
-static/latest" is complete and in `review_required`. Added 6 focused QA tests in
-`tests/test_tg_bot.py` (TgBotTriageAwareQATests): cooldown bypass in kept/ mode,
-non-kept counter stays zero without kept/ folder, all kept images skipped as similar
-when cooldown not expired, OSError during non-kept counting swallowed, dotfiles
-excluded from root fallback, send_photo called with kept/ subfolder path.
-Total 183 tests pass (103 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.
-No source code changes required.
+TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated
+static/latest" is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md`
+validation counts to 103 tg_bot tests / 183 total, added troubleshooting entries for
+`IMAGE_SIMILARITY_THRESHOLD` misconfiguration and non-kept counter behavior. Verified
+`README.md` consistency with `tg_bot/bot.py` implementation. Updated project status docs.
 
-## New Review Items (TASK-004 repeated-static QA)
+## New Review Items (TASK-005 repeated-static documentation)
 
-- Review `tests/test_tg_bot.py` diff for 6 new QA tests (TgBotTriageAwareQATests).
-  - Verify `test_cooldown_bypass_works_in_kept_mode`: cooldown bypass sends similar images in kept/ mode.
-  - Verify `test_non_kept_counter_stays_zero_without_kept_folder`: `_SKIPPED_NON_KEPT_COUNT` stays zero when no kept/ folder (backward compat).
-  - Verify `test_all_kept_images_skipped_as_similar_when_cooldown_not_expired`: all kept images skipped when similar and cooldown not expired, duplicate count increments.
-  - Verify `test_oserror_during_non_kept_counting_is_swallowed`: OSError during non-kept counting does not prevent sending.
-  - Verify `test_get_image_list_excludes_dotfiles_from_root`: dotfiles excluded from root fallback.
-  - Verify `test_send_photo_called_with_kept_subfolder_path`: path contains `kept/` subfolder.
-  - Decide whether to accept, revise, or reject the QA tests.
+- Review `docs/TG_BOT_RUNBOOK.md` diff:
+  - Verify validation counts updated from 76 to 103 tg_bot tests and 156 to 183 total.
+  - Verify new troubleshooting entries for `IMAGE_SIMILARITY_THRESHOLD` (too high
+    sends similar images, too low skips all images) and non-kept counter behavior
+    (stays zero without `kept/` subfolder).
+  - Verify "Triage-aware Image Sending", "Startup Behavior", and "Image Sender
+    Safeguards" sections remain accurate against `tg_bot/bot.py`.
+  - Verify environment variables table includes `IMAGE_SIMILARITY_THRESHOLD`.
+  - Decide whether to accept, revise, or reject the documentation.
+
+- Review `README.md` Telegram bot section for consistency with `tg_bot/bot.py`.
+  - Verify `IMAGE_SIMILARITY_THRESHOLD` env var is documented with default 10.
+  - Verify triage-aware image sending paragraph is accurate.
+  - Verify startup behavior and sender safeguards are described.
+  - Verify `/admin` send statistics line is present.
+  - Decide whether to accept, revise, or reject.
+
+- Review `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+  `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml` diffs.
+  - Verify TASK-005 is recorded accurately and counts are correct (103 tg_bot, 183 total).
+  - Decide whether to accept, revise, or reject the project status updates.
 
 ## Prior Review Items (TASK-003 repeated-static implementation)
 

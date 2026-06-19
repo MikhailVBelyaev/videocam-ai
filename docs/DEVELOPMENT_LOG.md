@@ -1,5 +1,22 @@
 # Development Log
 
+## 2026-06-19 (Docs)
+
+- Completed TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated
+  static/latest"
+  (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-005).
+  - Updated `docs/TG_BOT_RUNBOOK.md` validation counts: 76 → 103 tg_bot tests, 156 → 183 total tests.
+  - Added troubleshooting entries for `IMAGE_SIMILARITY_THRESHOLD` misconfiguration (too high sends
+    similar images, too low skips all images as similar) and non-kept counter behavior (stays zero
+    without `kept/` subfolder).
+  - Verified `README.md` Telegram bot section consistency with `tg_bot/bot.py` implementation:
+    `IMAGE_SIMILARITY_THRESHOLD` env var (default 10), triage-aware image sending, sender safeguards,
+    startup behavior, send statistics in `/admin`, and `/state` command.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml`.
+  - No source code changes. All 103 tg_bot tests pass; total 183 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (QA)
 
 - Completed TASK-004 QA validation for "Fix production Telegram image delivery: bot sends repeated static/latest"

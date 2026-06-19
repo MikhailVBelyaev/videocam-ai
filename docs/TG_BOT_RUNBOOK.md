@@ -219,10 +219,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 76 tg_bot tests pass
+- 103 tg_bot tests pass
 - 52 snapshot triage tests pass
 - 28 web_viewer tests pass
-- 156 total tests pass
+- 183 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
@@ -238,3 +238,6 @@ Expected results:
 | Sender warnings about "maximum running instances reached" | Overlapping sender iterations (pre-guard behavior) | Ensure you are running the version with `_SENDER_LOCK`; restart the bot if the lock appears stuck |
 | `/admin` sends text but no photo | Latest dated folder contains no images, or photo exceeds Telegram limits | Verify `output/YYYY-MM-DD/` contains `.jpg`/`.jpeg`/`.png` files; check logs for send errors |
 | Bot drains old images slowly after restart | `.last_sent_file` was missing on startup | This is fixed in the current version; verify logs show "Initialized state to latest image" on first start |
+| Too many similar images sent | `IMAGE_SIMILARITY_THRESHOLD` is set too high | Lower `IMAGE_SIMILARITY_THRESHOLD` (default 10); values below 5 will aggressively filter even real changes |
+| All images skipped as similar | `IMAGE_SIMILARITY_THRESHOLD` is set too low | Raise `IMAGE_SIMILARITY_THRESHOLD`; values above 15 allow most visual variation through |
+| Non-kept images not appearing in `/admin` stats | No `kept/` subfolder exists in the dated output folder | When no `kept/` subfolder exists, `_SKIPPED_NON_KEPT_COUNT` stays zero (backward-compatible fallback to all images) |
