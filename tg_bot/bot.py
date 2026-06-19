@@ -390,6 +390,30 @@ def _format_admin_message(summary: dict, run_date: str | None, fresh: bool) -> s
         f"*Latest sent:* {latest_sent_str}",
         f"*Last skip reason:* {_LAST_SKIP_REASON or '—'}",
     ])
+
+    # Stuck-state visibility
+    watched_folder = LAST_SENT_FOLDER or "Unknown"
+    newest_folder = _get_latest_run_date() or "Unknown"
+    state_file_content = "not set"
+    try:
+        if os.path.exists(LAST_SENT_FILE):
+            with open(LAST_SENT_FILE, "r") as f:
+                state_file_content = f.read().strip() or "empty"
+    except OSError:
+        state_file_content = "unreadable"
+
+    if watched_folder == newest_folder:
+        status = "✅ Fresh"
+    else:
+        status = f"⚠️ Stuck on {watched_folder}"
+
+    lines.extend([
+        "",
+        f"*Watched folder:* `{watched_folder}`",
+        f"*Newest folder:* `{newest_folder}`",
+        f"*State file:* `{state_file_content}`",
+        f"*Status:* {status}",
+    ])
     return "\n".join(lines)
 
 
@@ -679,6 +703,22 @@ def _send_new_images_iteration():
                     sent_count += 1
                     if sent_count >= MAX_IMAGES_PER_ITERATION:
                         break
+
+        # Folder advancement: if nothing was sent and we are not on the latest folder,
+        # advance to the next dated folder so the bot does not stay stuck on stale folders.
+        newest_folder = _get_latest_run_date()
+        if sent_count == 0 and newest_folder and current_folder != newest_folder:
+            next_index = folder_index + 1
+            if next_index < len(subfolders):
+                new_folder = subfolders[next_index]
+                LAST_SENT_FOLDER = new_folder
+                LAST_SENT_IMAGE = None
+                try:
+                    with open(LAST_SENT_FILE, "w") as f:
+                        f.write(f"{new_folder}/\n")
+                except OSError:
+                    pass
+                logger.info(f"Advanced to folder: {new_folder}")
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
 

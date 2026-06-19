@@ -2346,5 +2346,269 @@ class TgBotFreshFirstQATests(unittest.TestCase):
                 self.assertEqual(bot_module._SKIPPED_STALE_COUNT, original_stale)
 
 
+class TgBotFolderAdvanceTests(unittest.TestCase):
+    """Tests for folder advancement when sent_count == 0 on a non-latest folder."""
+
+    def test_old_folder_all_stale_advances(self):
+        """When all remaining images in old folder are stale, bot advances to next folder."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_folder = os.path.join(tmp, "2026-06-18")
+            new_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(old_folder)
+            os.makedirs(new_folder)
+            for name in ("frame_001.jpg", "frame_002.jpg"):
+                path = os.path.join(old_folder, name)
+                open(path, "w").close()
+                os.utime(path, (time.time() - 7200, time.time() - 7200))
+            fresh_path = os.path.join(new_folder, "frame_003.jpg")
+            open(fresh_path, "w").close()
+            os.utime(fresh_path, (time.time() - 10, time.time() - 10))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.MAX_IMAGE_AGE_SECONDS", 3600), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-18"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+                self.assertIsNone(bot_module.LAST_SENT_IMAGE)
+
+    def test_old_folder_all_similar_advances(self):
+        """When all remaining images in old folder are similar within cooldown, bot advances."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_folder = os.path.join(tmp, "2026-06-18")
+            new_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(old_folder)
+            os.makedirs(new_folder)
+            for name in ("frame_001.jpg", "frame_002.jpg"):
+                path = os.path.join(old_folder, name)
+                open(path, "w").close()
+                os.utime(path, (time.time() - 300, time.time() - 300))
+            fresh_path = os.path.join(new_folder, "frame_003.jpg")
+            open(fresh_path, "w").close()
+            os.utime(fresh_path, (time.time() - 10, time.time() - 10))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+            last_sent = os.path.join(old_folder, "frame_001.jpg")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-18"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", last_sent), \
+                 patch("tg_bot.bot.are_images_similar", return_value=True), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot._LAST_SENT_TIMESTAMP", time.time()), \
+                 patch("tg_bot.bot.SEND_COOLDOWN_SECONDS", 86400), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+                self.assertIsNone(bot_module.LAST_SENT_IMAGE)
+
+    def test_old_folder_fully_sent_advances(self):
+        """When LAST_SENT_IMAGE is the last image in old folder, bot advances."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_folder = os.path.join(tmp, "2026-06-18")
+            new_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(old_folder)
+            os.makedirs(new_folder)
+            path = os.path.join(old_folder, "frame_001.jpg")
+            open(path, "w").close()
+            os.utime(path, (time.time() - 10, time.time() - 10))
+            fresh_path = os.path.join(new_folder, "frame_002.jpg")
+            open(fresh_path, "w").close()
+            os.utime(fresh_path, (time.time() - 10, time.time() - 10))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+            last_sent = os.path.join(old_folder, "frame_001.jpg")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-18"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", last_sent), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+                self.assertIsNone(bot_module.LAST_SENT_IMAGE)
+
+    def test_latest_folder_zero_sends_stays_put(self):
+        """When current folder is already the latest and no images are sent, stay put."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            for name in ("frame_001.jpg", "frame_002.jpg"):
+                path = os.path.join(folder, name)
+                open(path, "w").close()
+                os.utime(path, (time.time() - 7200, time.time() - 7200))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.MAX_IMAGE_AGE_SECONDS", 3600), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-19"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+
+    def test_normal_send_in_old_folder_no_advance(self):
+        """When an image is sent from the old folder, do not advance."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_folder = os.path.join(tmp, "2026-06-18")
+            new_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(old_folder)
+            os.makedirs(new_folder)
+            path = os.path.join(old_folder, "frame_001.jpg")
+            open(path, "w").close()
+            os.utime(path, (time.time() - 10, time.time() - 10))
+            fresh_path = os.path.join(new_folder, "frame_002.jpg")
+            open(fresh_path, "w").close()
+            os.utime(fresh_path, (time.time() - 10, time.time() - 10))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-18"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-18")
+                mock_send.assert_called_once()
+
+    def test_multi_folder_rapid_advancement(self):
+        """Bot advances through multiple stale old folders until reaching the latest."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for date in ("2026-06-17", "2026-06-18", "2026-06-19"):
+                d = os.path.join(tmp, date)
+                os.makedirs(d)
+                path = os.path.join(d, "frame.jpg")
+                open(path, "w").close()
+                os.utime(path, (time.time() - 7200, time.time() - 7200))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-17"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.MAX_IMAGE_AGE_SECONDS", 3600), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-18")
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+                # Now on latest; third call should stay put
+                _send_new_images_iteration()
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+
+    def test_admin_stuck_state_fields(self):
+        """_format_admin_message includes Watched folder, Newest folder, State file, Status."""
+        import tg_bot.bot as bot_module
+
+        bot_module._SENT_COUNT = 0
+        bot_module._SKIPPED_DUPLICATE_COUNT = 0
+        bot_module._SKIPPED_NON_KEPT_COUNT = 0
+        bot_module._SKIPPED_STALE_COUNT = 0
+        bot_module._LAST_SKIP_REASON = ""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = os.path.join(tmp, ".last_sent_file")
+            with open(state_file, "w") as f:
+                f.write("2026-06-18/frame_001.jpg\n")
+
+            try:
+                with patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-18"), \
+                     patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+                     patch("tg_bot.bot.LAST_SENT_FILE", state_file):
+                    summary = {"total_images": 10, "kept_images": 5,
+                               "total_objects_by_type": {}, "missing_expected_objects": []}
+                    text = _format_admin_message(summary, "2026-06-19", fresh=True)
+                    self.assertIn("*Watched folder:* `2026-06-18`", text)
+                    self.assertIn("*Newest folder:* `2026-06-19`", text)
+                    self.assertIn("2026-06-18/frame_001.jpg", text)
+                    self.assertIn("*Status:* \u26a0\ufe0f Stuck on 2026-06-18", text)
+
+                with patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-19"), \
+                     patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+                     patch("tg_bot.bot.LAST_SENT_FILE", state_file):
+                    text = _format_admin_message(summary, "2026-06-19", fresh=True)
+                    self.assertIn("*Status:* \u2705 Fresh", text)
+            finally:
+                bot_module._SENT_COUNT = 0
+                bot_module._SKIPPED_DUPLICATE_COUNT = 0
+                bot_module._SKIPPED_NON_KEPT_COUNT = 0
+                bot_module._SKIPPED_STALE_COUNT = 0
+                bot_module._LAST_SKIP_REASON = ""
+
+    def test_state_file_persistence_on_advancement(self):
+        """After advancement, .last_sent_file contains new_folder/\n."""
+        import time
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            old_folder = os.path.join(tmp, "2026-06-18")
+            new_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(old_folder)
+            os.makedirs(new_folder)
+            path = os.path.join(old_folder, "frame.jpg")
+            open(path, "w").close()
+            os.utime(path, (time.time() - 7200, time.time() - 7200))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.MAX_IMAGE_AGE_SECONDS", 3600), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", "2026-06-18"), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertTrue(os.path.exists(state_file))
+                with open(state_file, "r") as f:
+                    content = f.read().strip()
+                self.assertEqual(content, "2026-06-19/")
+
+
 if __name__ == "__main__":
     unittest.main()

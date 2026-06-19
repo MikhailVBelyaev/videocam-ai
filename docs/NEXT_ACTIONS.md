@@ -4,32 +4,43 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-002 design for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
-is complete and in `review_required`. Created `docs/TG_BOT_FOLDER_ADVANCE_DESIGN.md`
-documenting affected services, modules, data flows, interfaces, implementation approach,
-and key tradeoffs. No source code changes. All 204 tests pass. `py_compile` clean.
+TASK-003 implementation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+is complete and in `review_required`. Modified `tg_bot/bot.py` to add folder advancement block
+in `_send_new_images_iteration()` and stuck-state visibility fields in `_format_admin_message()`.
+Added 8 focused tests in `tests/test_tg_bot.py` (`TgBotFolderAdvanceTests`). Updated
+`README.md` and `docs/TG_BOT_RUNBOOK.md`. All 212 tests pass. `py_compile` clean.
 
-## New Review Items (TASK-002 folder-advancement design)
+## New Review Items (TASK-003 folder-advancement implementation)
 
-- Review `docs/TG_BOT_FOLDER_ADVANCE_DESIGN.md`.
-  - Verify affected services, modules, data flows, and interfaces are accurate.
-  - Verify implementation approach covers: folder advancement when `sent_count == 0`
-    and current folder is not latest, latest-folder boundary guard, `/admin`
-    stuck-state fields (watched folder, newest folder, state file content, status
-    indicator), and state file persistence on advancement.
-  - Verify key tradeoffs are documented with rationale (`sent_count == 0` trigger
-    vs. alternatives, next-folder vs. jump-to-newest step size, `folder/\n` format
-    vs. new file contract, direct read vs. reuse for `/admin` state file display).
-  - Verify risks and mitigations are adequate (overlap with pending reviews,
-    advancing past similarity-skipped images, multi-folder rapid advancement,
-    state file format parsing, write races).
-  - Verify no scope expansion into triage pipeline, web viewer, camera capture,
-    max-age filter, similarity threshold, cooldown behavior, startup initialization,
-    or Docker infrastructure.
-  - Decide whether to accept, revise, or reject the design.
-  - If accepted, prepare a TASK-003 implementation job.
+- Review `tg_bot/bot.py` diff for the folder advancement fix.
+  - Verify folder advancement block runs after send loop and before `cleanup_old_folders()`.
+  - Verify `sent_count == 0` and `current_folder != newest_folder` trigger.
+  - Verify latest-folder boundary guard (stay put when current == newest).
+  - Verify `LAST_SENT_IMAGE` is cleared to `None` on advancement.
+  - Verify `.last_sent_file` is written as `new_folder/\n` on advancement.
+  - Verify `_format_admin_message()` includes `Watched folder`, `Newest folder`,
+    `State file`, and `Status` fields.
+  - Verify existing concurrency guard, send cap, cooldown bypass, triage-aware selection,
+    startup initialization, max-age filter, newest-first ordering, `/state`, and
+    image-sending behavior are unchanged (no regression).
+  - Decide whether to accept, revise, or reject the implementation.
 
-## Completed Review Items (TASK-001 folder-advancement scope)
+- Review `tests/test_tg_bot.py` diff for 8 new focused tests (`TgBotFolderAdvanceTests`).
+  - Verify `test_old_folder_all_stale_advances`
+  - Verify `test_old_folder_all_similar_advances`
+  - Verify `test_old_folder_fully_sent_advances`
+  - Verify `test_latest_folder_zero_sends_stays_put`
+  - Verify `test_normal_send_in_old_folder_no_advance`
+  - Verify `test_multi_folder_rapid_advancement`
+  - Verify `test_admin_stuck_state_fields`
+  - Verify `test_state_file_persistence_on_advancement`
+  - Decide whether to accept, revise, or reject the test coverage.
+
+- Review `README.md` diff for folder advancement description and new `/admin` fields.
+- Review `docs/TG_BOT_RUNBOOK.md` diff for "Folder Advancement" section, updated `/admin`
+  description, validation counts (132 tg_bot, 212 total), and troubleshooting entry.
+
+## Completed Review Items (TASK-002 folder-advancement design)
 
 - Scope doc `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md` reviewed and in `review_required`.
   - Minimum deliverable covers folder advancement logic, latest-folder boundary guard,

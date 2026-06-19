@@ -1,5 +1,34 @@
 # Development Log
 
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+  (Job ID: 2026-06-19_190332_videocam-ai-fix-tg-bot-still-stuck-on-old-last-sent-folder-a-task-003).
+  - Modified `tg_bot/bot.py`:
+    - Added folder advancement block in `_send_new_images_iteration()`: when `sent_count == 0`
+      and current folder is not the latest dated folder, advance `LAST_SENT_FOLDER` to the next
+      folder, clear `LAST_SENT_IMAGE` to `None`, and persist state via `.last_sent_file`
+      (`new_folder/\n` format).
+    - Added latest-folder boundary guard: when current folder is already the newest, stay put.
+    - Extended `_format_admin_message()` with stuck-state visibility fields:
+      `Watched folder`, `Newest folder`, `State file`, `Status` (`✅ Fresh` or `⚠️ Stuck on <folder>`).
+  - Added 8 focused tests in `tests/test_tg_bot.py` (`TgBotFolderAdvanceTests`):
+    - `test_old_folder_all_stale_advances`
+    - `test_old_folder_all_similar_advances`
+    - `test_old_folder_fully_sent_advances`
+    - `test_latest_folder_zero_sends_stays_put`
+    - `test_normal_send_in_old_folder_no_advance`
+    - `test_multi_folder_rapid_advancement`
+    - `test_admin_stuck_state_fields`
+    - `test_state_file_persistence_on_advancement`
+  - Updated `README.md` with folder advancement behavior and new `/admin` fields.
+  - Updated `docs/TG_BOT_RUNBOOK.md` with "Folder Advancement" section, updated `/admin`
+    description, validation counts (132 tg_bot tests, 212 total), and "Bot stuck on old folder"
+    troubleshooting entry.
+  - All 132 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 212 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Planning)
 
 - Completed TASK-001 scope definition for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"

@@ -93,6 +93,23 @@ after the newest-first sort, so the freshest candidates are checked first.
 Skipped stale images increment `_SKIPPED_STALE_COUNT` and set the last skip
 reason to `"stale"`.
 
+## Folder Advancement
+
+When the current dated folder yields zero sends in an iteration (all remaining
+images were skipped as stale, similar within cooldown, or non-kept), the bot
+automatically advances `LAST_SENT_FOLDER` to the next dated folder (by ascending
+date) and clears `LAST_SENT_IMAGE` so the next tick starts fresh at index 0.
+
+- Trigger: `sent_count == 0` after the send loop completes
+- Step size: one folder at a time (preserves chronological ordering)
+- Boundary guard: when already on the newest folder, the bot stays put even
+  with zero sends
+- State persistence: the new folder is written to `.last_sent_file` as
+  `new_folder/\n` so a restart resumes from the advanced position
+
+This prevents the bot from staying stuck on an old folder after the max-age
+filter skips all remaining images there.
+
 ## Startup Behavior
 
 On first start or when `output/.last_sent_file` is missing, the bot scans the
@@ -126,6 +143,10 @@ Text output includes:
 - Backlog size (unsent images after the cursor)
 - Latest capture time and latest sent time
 - Last skip reason (similar, non-kept, stale, or —)
+- Watched folder (`LAST_SENT_FOLDER` or Unknown)
+- Newest folder (latest dated folder or Unknown)
+- State file (raw content of `.last_sent_file` or not set)
+- Status indicator (`✅ Fresh` when watched == newest, otherwise `⚠️ Stuck on <folder>`)
 
 Image output:
 - After the text reply, the bot sends the most recently modified image file
@@ -242,10 +263,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 124 tg_bot tests pass
+- 132 tg_bot tests pass
 - 52 snapshot triage tests pass
 - 28 web_viewer tests pass
-- 204 total tests pass
+- 212 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
@@ -268,3 +289,4 @@ Expected results:
 | All unsent images skipped as stale | `MAX_IMAGE_AGE_SECONDS` is set too low, or system clock is skewed | Raise `MAX_IMAGE_AGE_SECONDS` (default 3600); verify file modification times are reasonable |
 | Stale images still sent | `MAX_IMAGE_AGE_SECONDS` is set too high | Lower `MAX_IMAGE_AGE_SECONDS` to match expected camera interval and acceptable lag |
 | File modification time unreadable (OSError) | Disk or permission issue prevents `os.path.getmtime` from reading the file | The bot treats the image as **not stale** (fail-open) and attempts to send it. This is defensive design; investigate the disk/permission issue if it recurs frequently |
+| Bot stuck on old folder | `LAST_SENT_FOLDER` points to a non-latest dated folder and all remaining images there are skipped | Check `/admin` Status field. If it shows `⚠️ Stuck on <folder>`, the bot will auto-advance on the next zero-send iteration. If it does not advance, verify newer dated folders exist in `output/` and that images in the old folder are not passing filters unexpectedly |

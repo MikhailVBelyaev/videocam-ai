@@ -169,10 +169,12 @@ The sender includes three production safeguards:
 
 Within the remaining unsent window, fresher frames are sent before older backlog frames (newest-first by file modification time). Images whose modification time is older than `MAX_IMAGE_AGE_SECONDS` are skipped as stale.
 
+When the current dated folder yields zero sends because all remaining images are skipped (stale, similar, or non-kept), the bot automatically advances to the next dated folder on the next tick. A boundary guard prevents advancing past the newest folder.
+
 When a `kept/` triage subfolder exists, only those images are sent; others are
 skipped as non-kept. Images whose perceptual hash distance from the last sent
 image is ≤ `IMAGE_SIMILARITY_THRESHOLD` are also skipped as similar duplicates.
-The `/admin` command reports send statistics (sent, skipped similar, skipped non-kept, skipped stale), backlog size, latest capture time, latest sent time, and last skip reason.
+The `/admin` command reports send statistics (sent, skipped similar, skipped non-kept, skipped stale), backlog size, latest capture time, latest sent time, last skip reason, watched folder, newest folder, state file content, and status indicator (Fresh or Stuck on ...).
 
 Full operating details, tuning guidance, JSON schema, and limitations are in:
 
