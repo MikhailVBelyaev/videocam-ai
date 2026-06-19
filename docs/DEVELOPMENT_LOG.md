@@ -974,3 +974,17 @@
   `opencv-python-headless`) and verified the ignored `.venv` workflow.
 - Updated `AGENTS.md`, `README.md`, and project docs with the validated `.venv`
   commands before publishing the reviewed snapshot triage package.
+
+## 2026-06-19 (QA)
+
+- Completed TASK-004 QA validation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first".
+- Added 7 focused QA tests in `tests/test_tg_bot.py` (`TgBotFolderAdvanceQATests`):
+  - `test_advance_state_file_write_failure`: module globals advance even when state file write raises OSError.
+  - `test_no_dated_folders_no_advancement`: when `_get_latest_run_date()` returns None, LAST_SENT_FOLDER is unchanged.
+  - `test_send_photo_failure_triggers_advancement`: send_photo returning False for all images leaves sent_count at 0, triggering advancement.
+  - `test_empty_current_folder_advances`: folder with zero image files sends nothing, triggers advancement to next folder.
+  - `test_advance_with_non_date_folder_ignored`: directories not matching YYYY-MM-DD are excluded from subfolder list, not used as advancement targets.
+  - `test_admin_state_file_unreadable`: `_format_admin_message` shows "unreadable" when state file read raises OSError.
+  - `test_last_sent_folder_deleted_between_iterations`: when LAST_SENT_FOLDER is absent from disk folders, bot processes the latest folder as fallback.
+- Notable finding: state file write failure (OSError) does not prevent in-memory advancement — module globals update correctly, but persistence is lost. This is consistent with the `except OSError: pass` pattern in the advancement block.
+- No source code changes required. All 219 tests pass (139 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.

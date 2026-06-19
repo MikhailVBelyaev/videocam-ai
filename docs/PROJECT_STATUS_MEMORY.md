@@ -4,21 +4,14 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
-- TASK-003 implementation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
-  is complete and in `review_required`. Modified `tg_bot/bot.py`:
-  - Added folder advancement block in `_send_new_images_iteration()`: when `sent_count == 0`
-    and current folder is not the latest dated folder, advance `LAST_SENT_FOLDER` to the next
-    folder, clear `LAST_SENT_IMAGE` to `None`, and persist state via `.last_sent_file`
-    (`new_folder/\n` format).
-  - Added latest-folder boundary guard.
-  - Extended `_format_admin_message()` with stuck-state visibility fields:
-    `Watched folder`, `Newest folder`, `State file`, `Status` (`✅ Fresh` or `⚠️ Stuck on <folder>`).
-  - Added 8 focused tests in `tests/test_tg_bot.py` (`TgBotFolderAdvanceTests`).
-  - Updated `README.md` and `docs/TG_BOT_RUNBOOK.md` with folder advancement docs,
-    new `/admin` fields, validation counts (132 tg_bot tests, 212 total), and
-    "Bot stuck on old folder" troubleshooting entry.
-  - All 132 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
-  - Total 212 tests pass. `py_compile` clean.
+- TASK-004 QA validation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+  is complete and in `review_required`. Added 7 focused QA tests in `tests/test_tg_bot.py`
+  (`TgBotFolderAdvanceQATests`): state file write failure (OSError leaves module globals correct
+  but persistence lost), no dated folders (no advancement), send_photo failure triggers advancement,
+  empty current folder triggers advancement, non-date directories ignored, admin state file unreadable
+  shows "unreadable", and deleted LAST_SENT_FOLDER falls back to latest folder. Notable finding:
+  state file write failure does not prevent in-memory advancement. No source code changes required.
+  All 219 tests pass (139 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.
 
 ## Prior Update
 

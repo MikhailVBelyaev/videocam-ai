@@ -4,11 +4,22 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-003 implementation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
-is complete and in `review_required`. Modified `tg_bot/bot.py` to add folder advancement block
-in `_send_new_images_iteration()` and stuck-state visibility fields in `_format_admin_message()`.
-Added 8 focused tests in `tests/test_tg_bot.py` (`TgBotFolderAdvanceTests`). Updated
-`README.md` and `docs/TG_BOT_RUNBOOK.md`. All 212 tests pass. `py_compile` clean.
+TASK-004 QA validation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after
+fresh-first" is complete and in `review_required`. Added 7 focused QA tests in
+`tests/test_tg_bot.py` (`TgBotFolderAdvanceQATests`). All 219 tests pass. `py_compile` clean.
+
+## New Review Items (TASK-004 folder-advancement QA)
+
+- Review `tests/test_tg_bot.py` diff for 7 new QA tests (`TgBotFolderAdvanceQATests`).
+  - `test_advance_state_file_write_failure`: module globals advance even when state file write raises OSError.
+  - `test_no_dated_folders_no_advancement`: when `_get_latest_run_date()` returns None, LAST_SENT_FOLDER is unchanged.
+  - `test_send_photo_failure_triggers_advancement`: send_photo returning False for all images leaves sent_count at 0, triggering advancement.
+  - `test_empty_current_folder_advances`: folder with zero image files sends nothing, triggers advancement to next folder.
+  - `test_advance_with_non_date_folder_ignored`: directories not matching YYYY-MM-DD are excluded from subfolder list.
+  - `test_admin_state_file_unreadable`: `_format_admin_message` shows "unreadable" when state file read raises OSError.
+  - `test_last_sent_folder_deleted_between_iterations`: when LAST_SENT_FOLDER is absent from disk folders, bot processes the latest folder as fallback.
+  - Notable finding: state file write failure (OSError) does not prevent in-memory advancement — module globals update correctly, but persistence is lost.
+  - Decide whether to accept, revise, or reject the QA tests.
 
 ## New Review Items (TASK-003 folder-advancement implementation)
 
