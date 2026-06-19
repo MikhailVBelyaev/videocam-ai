@@ -4,16 +4,27 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated
-static/latest" is complete and in `review_required`. Modified `tg_bot/bot.py` to add
-`IMAGE_SIMILARITY_THRESHOLD` env var (default 10), `_kept_images_exist()` and
-`_get_image_list()` helpers for triage-aware image selection, send statistics counters
-(`_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT`), triage-aware
-`_send_new_images_iteration()` preferring `kept/` images, and send statistics in `/admin`.
-Added 17 new tests (4 classes). Updated `docs/TG_BOT_RUNBOOK.md` and `README.md`.
-Total 97 tests pass. `py_compile` clean.
+TASK-004 QA validation for "Fix production Telegram image delivery: bot sends repeated
+static/latest" is complete and in `review_required`. Added 6 focused QA tests in
+`tests/test_tg_bot.py` (TgBotTriageAwareQATests): cooldown bypass in kept/ mode,
+non-kept counter stays zero without kept/ folder, all kept images skipped as similar
+when cooldown not expired, OSError during non-kept counting swallowed, dotfiles
+excluded from root fallback, send_photo called with kept/ subfolder path.
+Total 183 tests pass (103 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.
+No source code changes required.
 
-## New Review Items (TASK-003 repeated-static implementation)
+## New Review Items (TASK-004 repeated-static QA)
+
+- Review `tests/test_tg_bot.py` diff for 6 new QA tests (TgBotTriageAwareQATests).
+  - Verify `test_cooldown_bypass_works_in_kept_mode`: cooldown bypass sends similar images in kept/ mode.
+  - Verify `test_non_kept_counter_stays_zero_without_kept_folder`: `_SKIPPED_NON_KEPT_COUNT` stays zero when no kept/ folder (backward compat).
+  - Verify `test_all_kept_images_skipped_as_similar_when_cooldown_not_expired`: all kept images skipped when similar and cooldown not expired, duplicate count increments.
+  - Verify `test_oserror_during_non_kept_counting_is_swallowed`: OSError during non-kept counting does not prevent sending.
+  - Verify `test_get_image_list_excludes_dotfiles_from_root`: dotfiles excluded from root fallback.
+  - Verify `test_send_photo_called_with_kept_subfolder_path`: path contains `kept/` subfolder.
+  - Decide whether to accept, revise, or reject the QA tests.
+
+## Prior Review Items (TASK-003 repeated-static implementation)
 
 - Review `tg_bot/bot.py` diff for the triage-aware Telegram image delivery fix.
   - Verify `IMAGE_SIMILARITY_THRESHOLD` env var (default 10) replaces hardcoded threshold=5.

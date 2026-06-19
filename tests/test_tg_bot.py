@@ -1654,5 +1654,157 @@ class TgBotSendStatisticsTests(unittest.TestCase):
             bot_module._SKIPPED_NON_KEPT_COUNT = 0
 
 
+class TgBotTriageAwareQATests(unittest.TestCase):
+    """QA tests for triage-aware sender failure cases and edge conditions."""
+
+    def test_cooldown_bypass_works_in_kept_mode(self):
+        """When kept/ images exist and cooldown IS expired, a similar image is
+        still sent via cooldown bypass even in kept/ mode."""
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            # Also create the root-level copy
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+
+            # Cooldown expired: timestamp is 0.0 (epoch)
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=True), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", "2026-06-19"), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", os.path.join(date_folder, "prev.jpg")), \
+                 patch("tg_bot.bot._LAST_SENT_TIMESTAMP", 0.0), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Cooldown expired → similar image should still be sent
+                mock_send.assert_called_once()
+
+    def test_non_kept_counter_stays_zero_without_kept_folder(self):
+        """_SKIPPED_NON_KEPT_COUNT does NOT increment when there is no kept/ folder.
+        This is a backward-compatibility guard: the old behavior had no such counter."""
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            open(os.path.join(date_folder, "frame_001.jpg"), "w").close()
+
+            bot_module._SKIPPED_NON_KEPT_COUNT = 0
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(bot_module._SKIPPED_NON_KEPT_COUNT, 0)
+
+    def test_all_kept_images_skipped_as_similar_when_cooldown_not_expired(self):
+        """When every image in kept/ is similar to LAST_SENT_IMAGE and cooldown
+        has not expired, no images are sent and _SKIPPED_DUPLICATE_COUNT increments."""
+        import time
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(kept_folder, "kept_002.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_002.jpg"), "w").close()
+
+            bot_module._SKIPPED_DUPLICATE_COUNT = 0
+
+            # Recent timestamp: cooldown NOT expired
+            recent_ts = time.time() - 10
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=True), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", "2026-06-19"), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", os.path.join(date_folder, "prev.jpg")), \
+                 patch("tg_bot.bot._LAST_SENT_TIMESTAMP", recent_ts), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # All 2 images are similar and cooldown not expired → 0 sent, 2 duplicate skips
+                mock_send.assert_not_called()
+                self.assertEqual(bot_module._SKIPPED_DUPLICATE_COUNT, 2)
+
+    def test_oserror_during_non_kept_counting_is_swallowed(self):
+        """OSError when listing root directory for non-kept counting does NOT
+        prevent the kept/ images from being sent. Exercises the try/except
+        at lines 559-571 of bot.py."""
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            # Also create root copy for the kept set check
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+
+            orig_listdir = os.listdir
+            def listdir_side_effect(path):
+                # OSError when listing the date folder root (for non-kept counting)
+                if path == date_folder:
+                    raise OSError("permission denied")
+                return orig_listdir(path)
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # The kept image should still be sent despite OSError in non-kept counting
+                mock_send.assert_called_once()
+
+    def test_get_image_list_excludes_dotfiles_from_root(self):
+        """_get_image_list excludes dotfiles when falling back to root directory."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # No kept/ subfolder → falls back to root
+            open(os.path.join(tmp, "img_001.jpg"), "w").close()
+            open(os.path.join(tmp, "img_002.png"), "w").close()
+            open(os.path.join(tmp, ".hidden"), "w").close()
+            open(os.path.join(tmp, ".DS_Store"), "w").close()
+            from tg_bot.bot import _get_image_list
+            result = _get_image_list(tmp)
+            self.assertEqual(result, ["img_001.jpg", "img_002.png"])
+
+    def test_send_photo_called_with_kept_subfolder_path(self):
+        """When kept/ mode is active, send_photo receives path inside kept/
+        subfolder, not the root date folder."""
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+            # Rejected image in root
+            open(os.path.join(date_folder, "rejected.jpg"), "w").close()
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                sent_path = mock_send.call_args[0][0]
+                # Path must contain 'kept' subfolder
+                self.assertIn(os.sep + "kept" + os.sep, sent_path)
+                self.assertNotIn("rejected", sent_path)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,20 @@
 # Development Log
 
+## 2026-06-19 (QA)
+
+- Completed TASK-004 QA validation for "Fix production Telegram image delivery: bot sends repeated static/latest"
+  (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-004).
+  - Added 6 focused QA tests in `tests/test_tg_bot.py` (TgBotTriageAwareQATests):
+    - `test_cooldown_bypass_works_in_kept_mode`: verifies cooldown bypass still sends similar images in kept/ mode.
+    - `test_non_kept_counter_stays_zero_without_kept_folder`: verifies `_SKIPPED_NON_KEPT_COUNT` does NOT increment when kept/ folder is absent (backward compatibility).
+    - `test_all_kept_images_skipped_as_similar_when_cooldown_not_expired`: verifies all kept images are skipped when similar and cooldown is not expired, and `_SKIPPED_DUPLICATE_COUNT` increments exactly per image.
+    - `test_oserror_during_non_kept_counting_is_swallowed`: verifies OSError during non-kept image counting does NOT prevent kept images from being sent.
+    - `test_get_image_list_excludes_dotfiles_from_root`: verifies `_get_image_list` excludes dotfiles when falling back to root directory.
+    - `test_send_photo_called_with_kept_subfolder_path`: verifies `send_photo` receives the correct `kept/` subfolder path, not the root date folder path.
+  - All 103 tg_bot tests pass; total 183 tests pass. `py_compile` clean.
+  - No source code changes required.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Implementation)
 
 - Completed TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated static/latest"
