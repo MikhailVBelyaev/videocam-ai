@@ -5,8 +5,16 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: 'TASK-001 scope for "Fix remaining Telegram image backlog problem" complete; awaiting human review. Created docs/TELEGRAM_BACKLOG_SCOPE.md with minimum deliverable (startup state initialization to latest image without sending), measurable acceptance criteria, explicit exclusions, and risks. No source code changes. All 146 tests pass. py_compile clean.'
+current_goal: 'TASK-002 design for "Fix remaining Telegram image backlog problem" complete; awaiting human review. Created docs/TELEGRAM_BACKLOG_DESIGN.md with affected services (tg_bot/bot.py primary), modules, data flows, interfaces, implementation approach (startup state initialization via _initialize_startup_state() helper), key tradeoffs (helper extraction, state persistence, cooldown timestamp), risks, and validation plan. No source code changes. All 146 tests pass. py_compile clean.'
 next_actions:
+- "Review docs/TELEGRAM_BACKLOG_DESIGN.md for the Telegram image backlog fix."
+- "  - Verify affected services, modules, data flows, and interfaces are accurate."
+- "  - Verify implementation approach covers startup state initialization when .last_sent_file is missing."
+- "  - Verify key tradeoffs are documented with rationale (helper extraction, state persistence, cooldown timestamp)."
+- "  - Verify risks and mitigations are adequate (overlap with pending Telegram delivery reviews, initialized image may never have been sent, mtime ordering)."
+- "  - Verify no scope expansion into camera capture, triage pipeline, web viewer, object detection, or container infrastructure."
+- "  - Decide whether to accept, revise, or reject the design."
+- "  - If accepted, prepare a TASK-003 implementation job."
 - "Review docs/TELEGRAM_BACKLOG_SCOPE.md for the Telegram image backlog fix."
 - "  - Verify minimum deliverable covers startup state initialization when .last_sent_file is missing."
 - "  - Verify acceptance criteria are measurable and exclusions are explicit."

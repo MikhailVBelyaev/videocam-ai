@@ -1,5 +1,27 @@
 # Development Log
 
+## 2026-06-19 (Design)
+
+- Completed TASK-002 design for "Fix remaining Telegram image backlog problem"
+  (Job ID: 2026-06-19_151143_videocam-ai-fix-remaining-telegram-image-backlog-problem-task-002).
+  - Listed affected services (`tg_bot/bot.py` primary; no changes to `cams_grabber`,
+    `web_viewer`, `sys_monitor`), modules, data flows, and interfaces in
+    `docs/TELEGRAM_BACKLOG_DESIGN.md`.
+  - Documented implementation approach: extract `_initialize_startup_state()` helper
+    to scan the latest dated folder and initialize `LAST_SENT_IMAGE`/`LAST_SENT_FOLDER`
+    without sending; modify `main()` to call it when `load_last_sent_file()` returns
+    `(None, None)`.
+  - Evaluated and rejected alternatives: inline initialization without helper,
+    in-memory-only state, and manual folder scan instead of reusing `_get_latest_image_path()`.
+  - Documented 3 key tradeoffs: helper extraction vs inline, state persistence on
+    initialization, and timestamp implications for cooldown bypass.
+  - Documented dependency analysis, risks, mitigations, files to change, and
+    validation plan.
+  - All 146 tests pass; no source code changes.
+  - `py_compile` clean.
+  - Status: `review_required`.
+
+
 ## 2026-06-19 (Planning)
 
 - Completed TASK-001 scope definition for "Fix remaining Telegram image backlog problem"

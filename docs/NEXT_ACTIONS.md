@@ -4,11 +4,28 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-001 scope for "Fix remaining Telegram image backlog problem" is complete and
-in `review_required`. `docs/TELEGRAM_BACKLOG_SCOPE.md` created with minimum
-deliverable, acceptance criteria, and exclusions.
+TASK-002 design for "Fix remaining Telegram image backlog problem" is complete and
+in `review_required`. `docs/TELEGRAM_BACKLOG_DESIGN.md` created with affected
+services, modules, data flows, interfaces, implementation approach, tradeoffs,
+risks, and validation plan.
 
-## New Review Items (TASK-001 Telegram backlog scope)
+## New Review Items (TASK-002 Telegram backlog design)
+
+- Review `docs/TELEGRAM_BACKLOG_DESIGN.md`.
+  - Verify affected services, modules, data flows, and interfaces are accurate.
+  - Verify implementation approach covers startup state initialization when
+    `.last_sent_file` is missing, using `_get_latest_image_path()` and
+    `save_last_sent_file()` without sending.
+  - Verify key tradeoffs are documented with rationale (helper extraction,
+    state persistence, cooldown timestamp implications).
+  - Verify risks and mitigations are adequate (overlap with pending Telegram
+    delivery reviews, initialized image may never have been sent, mtime ordering).
+  - Verify no scope expansion into camera capture, triage pipeline, web viewer,
+    object detection, or container infrastructure.
+  - Decide whether to accept, revise, or reject the design.
+  - If accepted, prepare a TASK-003 implementation job.
+
+## Prior Review Items (TASK-001 Telegram backlog scope)
 
 - Review `docs/TELEGRAM_BACKLOG_SCOPE.md`.
   - Verify minimum deliverable covers: startup state initialization when
@@ -18,7 +35,7 @@ deliverable, acceptance criteria, and exclusions.
   - Verify no scope expansion into camera capture, triage pipeline, web viewer,
     object detection, or container infrastructure.
   - Decide whether to accept, revise, or reject the scope.
-  - If accepted, prepare a TASK-002 design job.
+  - Scope design is now complete; if accepted, review the TASK-002 design doc next.
 
 ## Completed Review Items (TASK-005 Telegram Docs)
 
