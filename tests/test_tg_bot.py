@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
 import pytz
 
@@ -14,6 +14,7 @@ from tg_bot.bot import (
     _is_admin_chat,
     _is_fresh,
     _read_latest_summary,
+    _summarize_live_output,
 )
 
 
@@ -46,6 +47,47 @@ class TgBotAdminTests(unittest.TestCase):
         self.assertNotIn("Missing expected", text)
         self.assertIn("Unknown", text)
         self.assertIn("Stale", text)
+
+    def test_summarize_live_output_counts_latest_folder_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp):
+                folder = os.path.join(tmp, "2026-06-19")
+                os.makedirs(folder)
+                open(os.path.join(folder, "frame_001_vehicle.jpg"), "w").close()
+                open(os.path.join(folder, "frame_002_person.png"), "w").close()
+                open(os.path.join(folder, "clip_001_vehicle.mp4"), "w").close()
+
+                result = _summarize_live_output()
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result["summary_source"], "live_output")
+        self.assertEqual(result["total_images"], 2)
+        self.assertEqual(result["kept_images"], 2)
+        self.assertEqual(result["video_files"], 1)
+        self.assertEqual(result["total_objects_by_type"], {"car": 2, "person": 1})
+        self.assertIn(result["latest_file"], {
+            "frame_001_vehicle.jpg",
+            "frame_002_person.png",
+            "clip_001_vehicle.mp4",
+        })
+
+    def test_format_admin_message_includes_live_output_details(self):
+        summary = {
+            "summary_source": "live_output",
+            "total_images": 2,
+            "kept_images": 2,
+            "video_files": 1,
+            "total_objects_by_type": {"car": 2, "person": 1},
+            "latest_file": "frame_001_vehicle.jpg",
+            "latest_file_time": "2026-06-19T10:23:00+05:00",
+            "missing_expected_objects": [],
+        }
+        text = _format_admin_message(summary, "2026-06-19", fresh=True)
+
+        self.assertIn("2 total, 2 kept", text)
+        self.assertIn("1", text)
+        self.assertIn("frame_001_vehicle.jpg", text)
+        self.assertIn("Live output summary", text)
 
     def test_is_admin_chat_matching_id(self):
         with patch.dict(os.environ, {"TELEGRAM_CHAT_ID": "12345"}, clear=False):
@@ -159,13 +201,10 @@ class TgBotAdminTests(unittest.TestCase):
                 path = os.path.join(tmp, "triage_summary.json")
                 with open(path, "w", encoding="utf-8") as f:
                     f.write("{}")
-                # Make file unreadable
-                os.chmod(path, 0o000)
-                try:
+                with patch("builtins.open", mock_open()) as mocked_open:
+                    mocked_open.side_effect = OSError("unreadable")
                     result = _read_latest_summary()
-                    self.assertIsNone(result)
-                finally:
-                    os.chmod(path, 0o644)
+                self.assertIsNone(result)
 
     def test_is_admin_chat_string_vs_int_coercion(self):
         """Admin chat ID comparison works with int chat id and string env var."""
@@ -192,7 +231,7 @@ class TgBotAdminTests(unittest.TestCase):
             update.message.reply_text.assert_not_called()
 
     def test_admin_command_admin_no_data(self):
-        """Admin chat with no triage data gets 'No triage data available.'"""
+        """Admin chat with no triage or live output data gets a clear message."""
         import asyncio
         from unittest.mock import AsyncMock
         from tg_bot.bot import admin_command
@@ -203,12 +242,45 @@ class TgBotAdminTests(unittest.TestCase):
         context = MagicMock()
 
         with patch("tg_bot.bot.ADMIN_CHAT_ID", "12345"), \
-             patch("tg_bot.bot._read_latest_summary", return_value=None):
+             patch("tg_bot.bot._read_latest_summary", return_value=None), \
+             patch("tg_bot.bot._summarize_live_output", return_value=None):
             coro = admin_command(update, context)
             asyncio.get_event_loop().run_until_complete(coro)
             update.message.reply_text.assert_called_once_with(
-                "No triage data available."
+                "No output data available."
             )
+
+    def test_admin_command_admin_uses_live_output_fallback(self):
+        """Admin chat gets live output summary when triage summary is absent."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from tg_bot.bot import admin_command
+
+        update = MagicMock()
+        update.effective_chat.id = 12345
+        update.message.reply_text = AsyncMock()
+        context = MagicMock()
+
+        summary = {
+            "summary_source": "live_output",
+            "total_images": 3,
+            "kept_images": 3,
+            "video_files": 1,
+            "total_objects_by_type": {"car": 2, "person": 1},
+            "latest_file": "frame_001_vehicle.jpg",
+            "missing_expected_objects": [],
+        }
+
+        with patch("tg_bot.bot.ADMIN_CHAT_ID", "12345"), \
+             patch("tg_bot.bot._read_latest_summary", return_value=None), \
+             patch("tg_bot.bot._summarize_live_output", return_value=summary), \
+             patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+             patch("tg_bot.bot._is_fresh", return_value=True):
+            coro = admin_command(update, context)
+            asyncio.get_event_loop().run_until_complete(coro)
+            text = update.message.reply_text.call_args[0][0]
+            self.assertIn("3 total, 3 kept", text)
+            self.assertIn("Live output summary", text)
 
     def test_admin_command_admin_with_data(self):
         """Admin chat with valid summary gets a formatted Markdown reply."""

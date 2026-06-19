@@ -41,6 +41,8 @@ BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID") or CHAT_ID
 KEEP_DAYS = 3
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
 
 
 def cleanup_old_folders():
@@ -171,6 +173,58 @@ def _get_latest_run_date() -> str | None:
         return None
 
 
+def _summarize_live_output() -> dict | None:
+    """Summarize the latest live output folder when no triage summary exists."""
+    run_date = _get_latest_run_date()
+    if not run_date:
+        return None
+    folder_path = os.path.join(OUTPUT_DIR, run_date)
+    try:
+        filenames = [
+            name
+            for name in os.listdir(folder_path)
+            if not name.startswith(".") and os.path.isfile(os.path.join(folder_path, name))
+        ]
+    except OSError:
+        return None
+
+    image_files = [
+        name for name in filenames if name.lower().endswith(IMAGE_EXTENSIONS)
+    ]
+    video_files = [
+        name for name in filenames if name.lower().endswith(VIDEO_EXTENSIONS)
+    ]
+    media_files = image_files + video_files
+    if not media_files:
+        return None
+
+    latest_name = max(
+        media_files,
+        key=lambda name: os.path.getmtime(os.path.join(folder_path, name)),
+    )
+    latest_path = os.path.join(folder_path, latest_name)
+    latest_dt = datetime.fromtimestamp(
+        os.path.getmtime(latest_path),
+        pytz.timezone("Asia/Tashkent"),
+    ).isoformat(timespec="seconds")
+
+    vehicle_count = sum(
+        1 for name in media_files if "vehicle" in name.lower() or "car" in name.lower()
+    )
+    person_count = sum(1 for name in media_files if "person" in name.lower())
+
+    return {
+        "summary_source": "live_output",
+        "total_images": len(image_files),
+        "kept_images": len(image_files),
+        "video_files": len(video_files),
+        "total_objects_by_type": {"car": vehicle_count, "person": person_count},
+        "latest_file": latest_name,
+        "latest_file_time": latest_dt,
+        "missing_expected_objects": [],
+    }
+
+
 def _is_fresh(run_date: str | None) -> bool:
     """Return True if run_date is within the last 24 hours."""
     if not run_date:
@@ -192,6 +246,10 @@ def _format_admin_message(summary: dict, run_date: str | None, fresh: bool) -> s
     person_count = objects.get("person", 0)
     missing = summary.get("missing_expected_objects", [])
     missing_count = len(missing)
+    video_count = summary.get("video_files")
+    latest_file = summary.get("latest_file")
+    latest_file_time = summary.get("latest_file_time")
+    source = summary.get("summary_source")
 
     status = "✅ Fresh (within 24h)" if fresh else "⚠️ Stale"
     date_str = run_date or "Unknown"
@@ -205,6 +263,15 @@ def _format_admin_message(summary: dict, run_date: str | None, fresh: bool) -> s
         f"*Images:* {total} total, {kept} kept",
         f"*Objects:* {car_count} cars, {person_count} people",
     ]
+    if video_count is not None:
+        lines.append(f"*Videos:* {video_count}")
+    if latest_file:
+        lines.extend(["", f"*Latest file:* `{latest_file}`"])
+    if latest_file_time:
+        lines.append(f"*Latest time:* {latest_file_time}")
+    if source == "live_output":
+        lines.append("")
+        lines.append("_Live output summary; no triage report found._")
     if missing_count:
         lines.append(f"*Missing expected:* {missing_count} frames")
     return "\n".join(lines)
@@ -220,7 +287,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fresh = _is_fresh(run_date)
 
     if summary is None:
-        await update.message.reply_text("No triage data available.")
+        summary = _summarize_live_output()
+
+    if summary is None:
+        await update.message.reply_text("No output data available.")
         return
 
     text = _format_admin_message(summary, run_date, fresh)
