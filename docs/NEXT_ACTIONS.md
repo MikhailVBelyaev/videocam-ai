@@ -4,14 +4,25 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-005 documentation for "Ignore old Telegram image backlog and process fresh live"
-is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts
-to 124 tg_bot tests / 204 total tests. Added troubleshooting entry for `os.path.getmtime`
-OSError fail-open behavior. Verified `README.md` consistency with `tg_bot/bot.py`.
-Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`,
-and `docs/PROJECT_MANAGER.yaml`. No source code changes. All 204 tests pass. `py_compile` clean.
+TASK-001 scope definition for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+is complete and in `review_required`. Created `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md` defining
+minimum deliverable (folder advancement logic, latest-folder boundary guard, `/admin` stuck-state
+visibility), measurable acceptance criteria, and explicit exclusions. No source code changes.
+All 204 tests pass. `py_compile` clean.
 
-## New Review Items (TASK-005 fresh-first documentation)
+## New Review Items (TASK-001 folder-advancement scope)
+
+- Review `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md`.
+  - Verify minimum deliverable covers: folder advancement when `sent_count == 0` and current
+    folder is not latest, latest-folder boundary guard, `/admin` stuck-state fields
+    (watched folder, newest folder, state file content, status indicator).
+  - Verify acceptance criteria are measurable and exclusions are explicit.
+  - Verify no scope expansion into triage pipeline, web viewer, camera capture, max-age filter,
+    similarity threshold, cooldown behavior, or Docker infrastructure.
+  - Decide whether to accept, revise, or reject the scope.
+  - If accepted, prepare a TASK-002 design job.
+
+## Prior Review Items (TASK-005 fresh-first documentation)
 
 - Review `docs/TG_BOT_RUNBOOK.md` diff.
   - Verify validation counts updated from 115 to 124 tg_bot tests and 195 to 204 total.

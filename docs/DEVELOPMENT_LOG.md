@@ -1,5 +1,19 @@
 # Development Log
 
+## 2026-06-19 (Planning)
+
+- Completed TASK-001 scope definition for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+  (Job ID: 2026-06-19_190332_videocam-ai-fix-tg-bot-still-stuck-on-old-last-sent-folder-a-task-001).
+  - Created `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md` defining minimum deliverable:
+    folder advancement logic in `_send_new_images_iteration()` (advance to next
+    dated folder when `sent_count == 0` and current folder is not latest),
+    latest-folder boundary guard, `/admin` stuck-state visibility fields
+    (watched folder, newest folder, state file content, status indicator),
+    focused unit tests, and README/runbook updates.
+  - Recorded measurable acceptance criteria and explicit exclusions.
+  - No source code changes. All 204 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (QA)
 
 - Completed TASK-004 QA validation for "Ignore old Telegram image backlog and process fresh live"
