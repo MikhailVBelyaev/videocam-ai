@@ -19,6 +19,23 @@
   - Total 204 tests pass. `py_compile` clean.
   - Notable finding: `os.path.getmtime` OSError in staleness check results in fail-open behavior (file not filtered as stale). This is a reasonable defensive design but worth noting for operational awareness.
 
+## 2026-06-19 (Docs)
+
+- Completed TASK-005 documentation for "Ignore old Telegram image backlog and process fresh live"
+  (Job ID: 2026-06-19_172411_videocam-ai-ignore-old-telegram-image-backlog-and-process-fr-task-005).
+  - Updated `docs/TG_BOT_RUNBOOK.md`:
+    - Updated validation counts: 124 tg_bot tests, 204 total tests.
+    - Added troubleshooting entry for `os.path.getmtime` OSError fail-open behavior
+      (file treated as not stale when modification time cannot be read).
+  - Verified `README.md` Telegram bot section consistency with `tg_bot/bot.py`:
+    - `MAX_IMAGE_AGE_SECONDS` env var (default 3600), newest-first processing,
+      and max-age staleness filter are accurately described.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/PROJECT_MANAGER.yaml`, and `docs/DEVELOPMENT_LOG.md`.
+  - No source code changes. All 124 tg_bot tests pass; all 52 snapshot triage tests pass;
+    all 28 web_viewer tests pass. Total 204 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Implementation)
 
 - Completed TASK-003 implementation for "Ignore old Telegram image backlog and process fresh live"

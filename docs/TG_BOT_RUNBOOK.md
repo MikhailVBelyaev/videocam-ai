@@ -242,10 +242,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 115 tg_bot tests pass
+- 124 tg_bot tests pass
 - 52 snapshot triage tests pass
 - 28 web_viewer tests pass
-- 195 total tests pass
+- 204 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
@@ -267,3 +267,4 @@ Expected results:
 | Bot sends old backlog before fresh frames | Expected behavior prior to newest-first sort | Current version re-sorts remaining unsent images by `mtime` descending; verify `MAX_IMAGE_AGE_SECONDS` is not set too low |
 | All unsent images skipped as stale | `MAX_IMAGE_AGE_SECONDS` is set too low, or system clock is skewed | Raise `MAX_IMAGE_AGE_SECONDS` (default 3600); verify file modification times are reasonable |
 | Stale images still sent | `MAX_IMAGE_AGE_SECONDS` is set too high | Lower `MAX_IMAGE_AGE_SECONDS` to match expected camera interval and acceptable lag |
+| File modification time unreadable (OSError) | Disk or permission issue prevents `os.path.getmtime` from reading the file | The bot treats the image as **not stale** (fail-open) and attempts to send it. This is defensive design; investigate the disk/permission issue if it recurs frequently |

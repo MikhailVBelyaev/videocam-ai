@@ -4,6 +4,17 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-005 documentation for "Ignore old Telegram image backlog and process fresh live"
+  is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation
+  counts to 124 tg_bot tests / 204 total tests. Added troubleshooting entry for
+  `os.path.getmtime` OSError fail-open behavior. Verified `README.md` Telegram bot
+  section consistency with `tg_bot/bot.py` implementation. Updated
+  `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`,
+  and `docs/PROJECT_MANAGER.yaml`. No source code changes. All 204 tests pass.
+  `py_compile` clean.
+
+## Prior Update
+
 - TASK-004 QA validation for "Ignore old Telegram image backlog and process fresh live"
   is complete and in `review_required`. Added 9 focused QA tests in `tests/test_tg_bot.py`
   (`TgBotFreshFirstQATests`): all-stale scenario, mixed staleness ordering, `_LAST_SKIP_REASON`
