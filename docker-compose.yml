@@ -26,6 +26,7 @@ services:
     volumes:
       - ./output:/app/output   # share output images
       - ./tg_bot/bot.py:/app/bot.py:cached  # mount local bot.py
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file:
       - ./tg_bot/.env
     restart: always
@@ -66,15 +67,26 @@ services:
         max-file: "3"
 
   web_viewer:
-    image: nginx:alpine
+    build: ./web_viewer
     container_name: web_viewer
     volumes:
-      - ./output:/usr/share/nginx/html:ro
+      - ./output:/app/output:ro
     ports:
-      - "8082:80"
+      - "8082:5000"
     restart: always
     logging:
       driver: "json-file"
       options:
         max-size: "50m"
         max-file: "3"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/admin')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3

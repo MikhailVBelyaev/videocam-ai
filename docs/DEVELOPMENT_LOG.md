@@ -1,5 +1,211 @@
 # Development Log
 
+## 2026-06-19 (Docs)
+
+- Completed TASK-005 documentation for "Change /admin: add web server page with cars and"
+  (Job ID: 2026-06-19_060847_videocam-ai-change-admin-add-web-server-page-with-cars-and-task-005).
+  - Verified `README.md` web viewer section against `web_viewer/app.py` implementation.
+  - Created `docs/WEB_VIEWER_RUNBOOK.md` with `/admin` endpoint behavior, static file
+    serving, configuration, local development steps, Docker Compose operating steps,
+    validation commands, and troubleshooting table.
+  - Added `docs/WEB_VIEWER_RUNBOOK.md` reference to `README.md` runbook list.
+  - Verified `docker-compose.yml` service definition, volume mount, port mapping,
+    and healthcheck are accurately documented.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/PROJECT_MANAGER.yaml`, and `docs/DEVELOPMENT_LOG.md`.
+  - All 28 web_viewer tests pass; all 47 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean on `web_viewer/app.py` and `tests/test_web_viewer.py`.
+  - Status: `review_required`.
+
+## 2026-06-19 (Design)
+
+- Completed TASK-002 design for "Change /admin: add web server page with cars and"
+  (Job ID: 2026-06-19_060847_videocam-ai-change-admin-add-web-server-page-with-cars-and-task-002).
+  - Listed affected services (`web_viewer` primary; no changes to `tg_bot`,
+    `cams_grabber`, `sys_monitor`), modules, data flows, and interfaces in
+    `docs/WEB_ADMIN_PAGE_DESIGN.md`.
+  - Documented implementation approach: Flask replacing nginx, with `/admin` HTML
+    route and catch-all static file route preserving existing URLs.
+  - Evaluated and rejected alternatives: FastAPI, nginx+sidecar, stdlib http.server.
+  - Documented 5 key tradeoffs: web framework choice, nginx replacement vs
+    augmentation, HTML rendering approach, static file serving approach, and
+    error handling for missing data.
+  - Documented dependency analysis, risks, mitigations, files to change, and
+    validation plan.
+  - All 47 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean.
+  - Status: `review_required`.
+
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "Change /admin: add web server page with cars and"
+  (Job ID: 2026-06-19_060847_videocam-ai-change-admin-add-web-server-page-with-cars-and-task-003).
+  - Replaced `nginx:alpine` `web_viewer` with a minimal Flask Python web server.
+  - Created `web_viewer/Dockerfile` based on `python:3.12-slim`.
+  - Created `web_viewer/requirements.txt` with `flask` and `pytz`.
+  - Created `web_viewer/app.py` with `/admin` HTML route and catch-all static file route.
+    - `_read_latest_summary()`: reads `output/triage_summary.json`, returns parsed dict or None.
+    - `_get_latest_run_date()`: finds most recent `YYYY-MM-DD` folder in `output/`.
+    - `_is_fresh()`: returns True if run date is within last 24h.
+    - `_get_latest_image_links()`: lists latest image files in latest folder for HTML links.
+    - `_render_admin_page()`: builds inline HTML with stats and image links.
+    - `admin_page()`: Flask route handler for `/admin`.
+    - `serve_static()`: Flask route handler preserving existing static file URLs.
+  - Updated `docker-compose.yml`:
+    - Replaced `image: nginx:alpine` with `build: ./web_viewer`.
+    - Updated volume mount to `./output:/app/output:ro`.
+    - Mapped host port `8082` to container port `5000`.
+    - Added HTTP healthcheck for `/admin`.
+  - Created `tests/test_web_viewer.py` with 14 focused tests covering:
+    - `/admin` HTML contains total_images, kept_images, car_count, person_count.
+    - `/admin` with missing JSON renders error message (HTTP 200).
+    - `/admin` with malformed JSON renders error message (HTTP 200).
+    - Static file serving returns correct content and mimetype.
+    - Default counts to 0 when `total_objects_by_type` keys absent.
+    - Missing expected objects count displayed correctly.
+    - `_get_latest_run_date` empty dir and non-date dir filtering.
+    - `_is_fresh` within 24h, stale, and None inputs.
+    - `_read_latest_summary` missing file returns None.
+    - `_render_admin_page` produces expected HTML structure.
+  - All 14 web_viewer tests pass; all 47 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean on `web_viewer/app.py` and `tests/test_web_viewer.py`.
+  - Updated `README.md` with new web viewer section documenting `/admin` behavior, URL,
+    stats displayed, error handling, static file preservation, and container recreate step.
+  - Status: `review_required`.
+
+## 2026-06-19 (Planning)
+
+- Completed TASK-001 scope definition for "Change /admin: add web server page with cars and"
+  (Job ID: 2026-06-19_060847_videocam-ai-change-admin-add-web-server-page-with-cars-and-task-001).
+  - Defined minimum deliverable: replace nginx `web_viewer` with a minimal Python
+    web server that serves static files from `output/` and adds an `/admin` HTML
+    page showing triage statistics (total images, kept images, car/person counts,
+    missing expected objects), latest run date, freshness indicator, and links to
+    latest images.
+  - Recorded measurable acceptance criteria and explicit exclusions in
+    `docs/WEB_ADMIN_PAGE_SCOPE.md`.
+  - Explicitly excluded container status display, video player, authentication,
+    real-time updates, REST API, and changes to Telegram bot or triage pipeline.
+  - Documented risks: performance vs nginx, JSON schema dependency, required
+    container recreate after compose change, and new service maintenance burden.
+  - Status: `review_required`.
+
+## 2026-06-19 (Docs)
+
+- Completed TASK-005 documentation for "add to command /state info about running containers"
+  (Job ID: 2026-06-19_104909_videocam-ai-add-to-command-state-info-about-running-containe-task-005).
+  - Verified `README.md` Telegram bot section against `tg_bot/bot.py` implementation.
+  - Created `docs/TG_BOT_RUNBOOK.md` with `/admin` and `/state` command behavior,
+    environment variables, Docker socket setup, local and Docker Compose operating
+    steps, validation commands, and troubleshooting table.
+  - Verified security notes are present: read-only socket mount, no container control
+    commands, admin-chat restriction for both commands.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/PROJECT_MANAGER.yaml`, and `docs/DEVELOPMENT_LOG.md`.
+  - All 47 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+  - Status: `review_required`.
+
+## 2026-06-19 (QA)
+
+- Completed TASK-004 QA validation for the `/state` command
+  (Job ID: 2026-06-19_104909_videocam-ai-add-to-command-state-info-about-running-containe-task-004).
+  - Added 8 focused QA tests in `tests/test_tg_bot.py` covering:
+    - `_query_container_states` returns None when `DockerException` is raised on `from_env()`
+    - `_query_container_states` returns proper dict structure (name, status, health, started_at)
+    - `_query_container_states` handles mixed found and not-found containers
+    - `_query_container_states` calls `client.close()` on success path
+    - `_query_container_states` defaults health to "N/A" when no Health key in attrs
+    - `_format_uptime` truncates Docker nanosecond fractional seconds to microseconds
+    - `_format_uptime` returns minutes-only for uptimes between 60s and 1h
+    - `_format_state_message` emoji mapping (running=✅, exited=❌, not-found=❌, restarting=⚠️, dead=⚠️)
+  - All 47 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+  - No source code changes required; all tests validate existing behavior.
+  - Status: `review_required`.
+
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "add to command /state info about running containers"
+  (Job ID: 2026-06-19_104909_videocam-ai-add-to-command-state-info-about-running-containe-task-003).
+  - Added `docker` package to `tg_bot/requirements.txt`.
+  - Added read-only Docker socket mount `/var/run/docker.sock:/var/run/docker.sock:ro`
+    to `tg_bot` service in `docker-compose.yml`.
+  - Implemented `/state` command in `tg_bot/bot.py`:
+    - `EXPECTED_CONTAINERS` constant with the four compose service names.
+    - `_query_container_states()`: queries Docker daemon via Docker SDK; returns
+      list of state dicts or `None` when runtime is unavailable.
+    - `_format_uptime()`: human-readable duration from ISO 8601 `StartedAt`.
+    - `_format_state_message()`: composes single-page Markdown summary with
+      status emoji, container name, status, health, and uptime.
+    - `state_command()`: admin-restricted async handler; silent ignore for non-admin
+      chats; graceful "Container runtime unavailable" error when socket is absent.
+    - Registered `CommandHandler("state", state_command)` in `main()`.
+  - Added 12 focused tests in `tests/test_tg_bot.py` covering:
+    - `_format_state_message` with all statuses (running, exited, not-found, restarting)
+    - `_format_state_message` uptime inclusion and N/A fallback
+    - `_format_uptime` seconds, hours/minutes, days, None, and malformed inputs
+    - `_query_container_states` returns None when docker import failed
+    - `state_command` non-admin silent return
+    - `state_command` admin runtime-unavailable error reply
+    - `state_command` admin with mocked states returns Markdown reply
+  - Updated `README.md` with `/state` command behavior, Docker socket requirement,
+    and container recreate step.
+  - All 39 tg_bot tests pass; all 52 snapshot triage tests pass.
+  - `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+  - Status: `review_required`.
+
+## 2026-06-19 (Design)
+
+- Completed TASK-002 design for "add to command /state info about running containers"
+  (Job ID: 2026-06-19_104909_videocam-ai-add-to-command-state-info-about-running-containe-task-002).
+  - Documented affected services (`tg_bot/bot.py` primary; Docker Engine runtime dependency;
+    `cams_grabber`, `sys_monitor`, `web_viewer` read-only), modules, data flows, and
+    interfaces in `docs/STATE_COMMAND_DESIGN.md`.
+  - Recommended Docker SDK for Python (`docker` package) with read-only Docker socket mount
+    as the implementation approach; rejected subprocess CLI, direct HTTP, and file-based
+    alternatives with rationale.
+  - Documented 5 key tradeoffs: container runtime access method, Docker socket security,
+    admin authorization reuse, uptime representation, and error handling strategy.
+  - Validation plan covers syntax checks, new unit tests for formatting/auth/errors,
+    existing triage test suite regression check, and manual smoke tests with/without
+    socket mount and with stopped containers.
+  - Status: `review_required`.
+
+## 2026-06-19 (QA)
+
+- Completed TASK-004 QA validation for "Change /admin: add web server page with cars and"
+  (Job ID: 2026-06-19_060847_videocam-ai-change-admin-add-web-server-page-with-cars-and-task-004).
+  - Added 14 focused QA tests in `tests/test_web_viewer.py` (WebViewerQAValidationTests class)
+    covering error paths, boundary conditions, and edge cases in the web viewer /admin page:
+    - `_read_latest_summary`: OSError (permission denied) returns None
+    - `_get_latest_run_date`: OSError during listdir returns None; single date dir returned correctly
+    - `_get_latest_image_links`: caps at 5 images; filters by .jpg/.jpeg/.png extensions;
+      ignores subdirectories; OSError during listing returns empty list
+    - `_is_fresh`: invalid date string returns False
+    - `_render_admin_page`: None summary shows error with zeroed counts; no links shows "No images found";
+      fresh=False shows "Stale"; non-car/person object types (truck, bicycle) are not rendered
+    - Static file serving: 404 for non-existent file
+    - Integration: no date dirs and no summary renders error message with "Unknown"
+  - All 28 web_viewer tests pass (14 original + 14 new).
+  - All 127 total tests pass (52 snapshot_triage + 47 tg_bot + 28 web_viewer).
+  - `py_compile` clean on `web_viewer/app.py` and `tests/test_web_viewer.py`.
+  - No source code changes required; all tests validate existing behavior.
+  - Status: `review_required`.
+
+## 2026-06-19 (Planning)
+
+- Completed TASK-001 scope definition for "add to command /state info about running containers"
+  (Job ID: 2026-06-19_104909_videocam-ai-add-to-command-state-info-about-running-containe-task-001).
+  - Defined minimum deliverable: `/state` command in `tg_bot/bot.py` that returns
+    a single-page summary of the four expected containers (`cams_grabber`, `tg_bot`,
+    `sys_monitor`, `web_viewer`) with running/exited/not-found state and health status.
+  - Recorded measurable acceptance criteria and explicit exclusions in
+    `docs/STATE_COMMAND_SCOPE.md`.
+  - Documented risks: Docker socket security, missing Docker CLI/library in container,
+    custom deployment name mismatches, and required container recreate after compose change.
+  - Status: `review_required`.
+
 ## 2026-06-18 (Docs)
 
 - Completed TASK-005 documentation for "add to tg service /admin command and show 1"

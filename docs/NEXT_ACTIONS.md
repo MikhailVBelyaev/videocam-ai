@@ -1,14 +1,165 @@
 # Next Actions
 
-Last updated: 2026-06-18
+Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-005 documentation for the Telegram `/admin` command
-(Job ID: 2026-06-18_115153_videocam-ai-add-to-tg-service-admin-command-and-show-1-task-005)
-is complete and awaiting human review.
+TASK-005 documentation for "Change /admin: add web server page with cars and"
+is complete and in `review_required`.
 
-## Completed Increments (Docs)
+Multiple prior increments remain in `review_required`.
+
+## New Review Items (TASK-005 web admin page documentation)
+
+- Review `docs/WEB_VIEWER_RUNBOOK.md` for the web viewer `/admin` page increment.
+  - Verify `/admin` endpoint behavior, static file serving, configuration,
+    local development steps, Docker Compose operating steps, validation commands,
+    and troubleshooting table are accurate.
+  - Verify `README.md` web viewer section and runbook references are correct.
+  - Decide whether to accept, revise, or reject the documentation.
+
+## New Review Items (TASK-004 web admin page QA validation)
+
+- Review `tests/test_web_viewer.py` diff for 14 new QA tests.
+  - Verify `_read_latest_summary` OSError path returns None.
+  - Verify `_get_latest_run_date` OSError returns None; single date dir returned correctly.
+  - Verify `_get_latest_image_links` caps at 5, filters by extension, ignores subdirectories,
+    and returns empty list on OSError.
+  - Verify `_is_fresh` invalid date string returns False.
+  - Verify `_render_admin_page` with None summary shows error with zeroed counts.
+  - Verify `_render_admin_page` with no links shows "No images found".
+  - Verify `_render_admin_page` with fresh=False shows "Stale" (not "Fresh").
+  - Verify non-car/person object types (truck, bicycle) are not rendered in stats.
+  - Verify static file 404 for non-existent path.
+  - Verify admin page renders with error and "Unknown" date when no data exists.
+  - Decide whether to accept, revise, or reject the QA tests.
+
+## New Review Items (TASK-003 web admin page implementation)
+
+- Review `web_viewer/app.py`, `web_viewer/Dockerfile`, `web_viewer/requirements.txt`
+  diff for the web viewer `/admin` page increment.
+  - Verify `/admin` renders HTML with run date, freshness, total/kept counts,
+    car/person counts, missing expected count, and image links.
+  - Verify missing/malformed `triage_summary.json` renders error message without crash.
+  - Verify static file URLs (`/YYYY-MM-DD/frame.jpg`) continue to work.
+  - Decide whether to accept, revise, or reject the implementation.
+
+- Review `docker-compose.yml` diff for the `web_viewer` service replacement.
+  - Verify `build: ./web_viewer`, volume mount, port mapping, and healthcheck.
+  - Verify container recreate step is documented in `README.md`.
+  - Decide whether to accept, revise, or reject the infrastructure changes.
+
+- Review `tests/test_web_viewer.py` diff for 14 new tests.
+  - Verify test coverage for `/admin` HTML response, missing/malformed JSON,
+    static file serving, default counts, missing expected objects, and helper units.
+  - Decide whether to accept, revise, or reject the test coverage.
+
+- Review `README.md` diff for web viewer documentation.
+  - Verify `/admin` URL, stats displayed, error behavior, static file preservation,
+    and container recreate step are documented.
+  - Decide whether to accept, revise, or reject the documentation.
+
+## New Review Items (TASK-002 web admin page design)
+
+- Review `docs/WEB_ADMIN_PAGE_DESIGN.md` for the web viewer `/admin` page increment.
+  - Verify affected services, modules, data flows, and interfaces are accurate.
+  - Verify implementation approach (Flask replacing nginx) and tradeoffs are acceptable.
+  - Verify risks and mitigations are adequate (performance, schema dependency, static file regression).
+  - Decide whether to accept, revise, or reject the design.
+  - If accepted, prepare a TASK-003 implementation job.
+
+## New Review Items (TASK-001 web admin page scope)
+
+- Review `docs/WEB_ADMIN_PAGE_SCOPE.md` for the web viewer `/admin` page increment.
+  - Verify minimum deliverable covers: static file serving preserved, `/admin`
+    HTML page with triage stats (total images, kept images, car/person counts,
+    missing expected objects), latest run date, freshness indicator, and links
+    to latest images.
+  - Verify acceptance criteria are measurable and exclusions are explicit.
+  - Verify container status display, video player, authentication, real-time
+    updates, REST API, and Telegram bot changes are explicitly excluded.
+  - Decide whether to accept, revise, or reject the scope.
+
+## New Review Items (TASK-004 /state QA validation)
+
+- Review `tests/test_tg_bot.py` diff for 8 new QA tests.
+  - Verify `_query_container_states` DockerException path returns None.
+  - Verify `_query_container_states` dict structure (name, status, health, started_at).
+  - Verify `_query_container_states` mixed found/not-found containers.
+  - Verify `_query_container_states` calls `client.close()` on success path.
+  - Verify `_query_container_states` defaults health to "N/A" when no Health key.
+  - Verify `_format_uptime` nanosecond truncation and minutes-only formatting.
+  - Verify `_format_state_message` emoji mapping for all status values.
+  - Decide whether to accept, revise, or reject the QA tests.
+
+## New Review Items (TASK-003 /state command implementation)
+
+- Review `tg_bot/bot.py` diff for the Telegram `/state` command increment.
+  - Verify `_query_container_states()` uses Docker SDK and handles `DockerException`.
+  - Verify `_format_state_message()` renders running/exited/not-found/restarting with emoji, health, and uptime.
+  - Verify `state_command()` reuses `_is_admin_chat()` and silently ignores non-admin chats.
+  - Verify runtime-unavailable path replies with "Container runtime unavailable. Docker socket not mounted?"
+  - Decide whether to accept, revise, or reject the implementation.
+
+- Review `tests/test_tg_bot.py` diff for new `/state` tests.
+  - Verify tests cover formatting, uptime, admin restriction, runtime-unavailable error, and Markdown parse_mode.
+  - Decide whether to accept, revise, or reject the test coverage.
+
+- Review `tg_bot/requirements.txt` and `docker-compose.yml` changes.
+  - Verify `docker` package is added and read-only socket mount is present.
+  - Decide whether to accept, revise, or reject the infrastructure changes.
+
+- Review `README.md` diff for `/state` documentation.
+  - Verify `/state` behavior, Docker socket requirement, and container recreate step are documented.
+  - Decide whether to accept, revise, or reject the documentation.
+
+## New Review Items (TASK-005 /state documentation)
+
+- Review `docs/TG_BOT_RUNBOOK.md` for the Telegram `/state` command increment.
+  - Verify runbook covers `/admin` and `/state` command behavior, environment variables,
+    Docker socket setup, local and Docker Compose operating steps, validation commands,
+    and troubleshooting table.
+  - Verify security notes (read-only mount, no container control, admin restriction) are present.
+  - Decide whether to accept, revise, or reject the documentation.
+
+## Completed Increments (Implementation)
+
+- TASK-005 documentation for "Change /admin: add web server page with cars and"
+  completed on 2026-06-19.
+  - Verified `README.md` web viewer section against `web_viewer/app.py` implementation.
+  - Created `docs/WEB_VIEWER_RUNBOOK.md` with `/admin` behavior, static file serving,
+    configuration, operating steps, validation commands, and troubleshooting.
+  - Updated project status docs (`PROJECT_STATUS_MEMORY.md`, `NEXT_ACTIONS.md`,
+    `PROJECT_MANAGER.yaml`, `DEVELOPMENT_LOG.md`).
+  - All 28 web_viewer tests pass; all 127 total tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
+- TASK-003 implementation for "add to command /state info about running containers" completed on 2026-06-19.
+  - Added `docker` package to `tg_bot/requirements.txt`.
+  - Added read-only Docker socket mount to `docker-compose.yml`.
+  - Implemented `/state` command in `tg_bot/bot.py` with Docker SDK query, human-readable uptime,
+    and admin restriction.
+  - Added 12 focused tests in `tests/test_tg_bot.py`; all 39 tg_bot tests pass.
+  - All 52 snapshot triage tests pass. `py_compile` clean.
+  - Updated `README.md` with `/state` command docs and Docker socket requirement.
+  - Status: `review_required`.
+
+- TASK-002 design for "add to command /state info about running containers" completed on 2026-06-19.
+  - Documented affected services (`tg_bot/bot.py` primary; Docker Engine runtime dependency),
+    modules, data flows, and interfaces in `docs/STATE_COMMAND_DESIGN.md`.
+  - Recommended Docker SDK for Python with read-only Docker socket mount.
+  - Documented 5 key tradeoffs: runtime access method, socket security, auth reuse,
+    uptime representation, error handling.
+  - Status: `review_required`.
+
+- TASK-005 documentation for "add to command /state info about running containers" completed on 2026-06-19.
+  - Verified `README.md` Telegram bot section against `tg_bot/bot.py` implementation.
+  - Created `docs/TG_BOT_RUNBOOK.md` with command behavior, Docker socket setup,
+    operating steps, validation commands, and troubleshooting table.
+  - Updated project status docs (`PROJECT_STATUS_MEMORY.md`, `NEXT_ACTIONS.md`,
+    `PROJECT_MANAGER.yaml`, `DEVELOPMENT_LOG.md`).
+  - All 47 tg_bot tests pass; all 52 snapshot triage tests pass. `py_compile` clean.
+  - Status: `review_required`.
 
 - TASK-005 documentation increment for the Telegram `/admin` command completed on 2026-06-18.
   - Verified `README.md` Telegram bot section against `tg_bot/bot.py` implementation.

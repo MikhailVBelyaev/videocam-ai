@@ -82,6 +82,29 @@ Validate the pipeline:
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
+## Web viewer
+
+The `web_viewer` service serves static camera output files and provides a browser-accessible `/admin` dashboard.
+
+`/admin` page (`http://<host>:8082/admin`) shows:
+
+- Latest run date (from most recent `YYYY-MM-DD` folder in `output/`)
+- Freshness indicator (within last 24h or stale)
+- Total and kept image counts
+- Car and person counts (when object detection is enabled)
+- Missing expected object count (if any)
+- Links to the latest images in the most recent dated folder
+
+If `output/triage_summary.json` is missing or malformed, the page renders a concise error message without crashing.
+
+Static file URLs (e.g., `http://<host>:8082/2026-06-19/frame.jpg`) continue to work as before.
+
+After updating `docker-compose.yml`, recreate the container for the change to take effect:
+
+```bash
+docker compose up -d --force-recreate web_viewer
+```
+
 ## Telegram bot
 
 The `tg_bot` service sends new camera frames to Telegram and responds to the `/admin` command.
@@ -100,7 +123,21 @@ Commands:
   - car and person counts (when object detection is enabled)
   - missing expected object count (if any)
 
-Non-admin chats are silently ignored.
+- `/state` — returns a single-page container status summary (admin chat only):
+  - status for `cams_grabber`, `tg_bot`, `sys_monitor`, `web_viewer`
+  - running / exited / not-found state and health status (`N/A` when unavailable)
+  - uptime or age for each container
+
+Non-admin chats are silently ignored for both commands.
+
+The `/state` command requires the Docker socket to be mounted into the `tg_bot`
+container. The `docker-compose.yml` already includes a read-only mount:
+`/var/run/docker.sock:/var/run/docker.sock:ro`. After updating the compose file,
+recreate the container for the change to take effect:
+
+```bash
+docker compose up -d --force-recreate tg_bot
+```
 
 Run the bot locally (ensure `output/` exists and `tg_bot/.env` is configured):
 
@@ -120,3 +157,5 @@ The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_I
 Full operating details, tuning guidance, JSON schema, and limitations are in:
 
 - `docs/SNAPSHOT_TRIAGE_RUNBOOK.md`
+- `docs/TG_BOT_RUNBOOK.md`
+- `docs/WEB_VIEWER_RUNBOOK.md`

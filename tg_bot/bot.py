@@ -14,6 +14,14 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+try:
+    import docker
+    from docker.errors import NotFound, DockerException
+except ImportError:
+    docker = None
+    NotFound = None
+    DockerException = None
+
 # Setup logging for Docker (stdout) with Tashkent timezone
 class TashkentFormatter(logging.Formatter):
     converter = datetime.fromtimestamp
@@ -298,6 +306,113 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
+# /state command helpers
+# ---------------------------------------------------------------------------
+
+EXPECTED_CONTAINERS = ["cams_grabber", "tg_bot", "sys_monitor", "web_viewer"]
+
+
+def _format_uptime(started_at: str | None) -> str:
+    """Return a human-readable uptime string from an ISO 8601 timestamp."""
+    if not started_at:
+        return "N/A"
+    try:
+        # Docker returns ISO 8601 with nanoseconds (e.g., 2026-06-19T08:00:00.123456789Z)
+        # Truncate to microseconds for Python's fromisoformat
+        dt_str = started_at
+        if "." in dt_str:
+            base, frac = dt_str.split(".", 1)
+            # Keep only up to 6 digits of fractional seconds
+            frac = frac.rstrip("Z")
+            frac = frac[:6]
+            if frac:
+                dt_str = f"{base}.{frac}"
+            else:
+                dt_str = base
+        dt_str = dt_str.rstrip("Z")
+        # fromisoformat handles timezone offsets but not "Z" directly in older Python,
+        # though Python 3.12 supports it. Replace Z with +00:00 for safety.
+        if dt_str.endswith("Z"):
+            dt_str = dt_str[:-1] + "+00:00"
+        started = datetime.fromisoformat(dt_str)
+        # Ensure started is timezone-aware before subtracting
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=pytz.UTC)
+        now = datetime.now(pytz.UTC)
+        delta = now - started
+        if delta < timedelta(seconds=60):
+            return f"up {int(delta.total_seconds())}s"
+        if delta < timedelta(hours=1):
+            return f"up {delta.seconds // 60}m"
+        if delta < timedelta(days=1):
+            return f"up {delta.seconds // 3600}h {(delta.seconds % 3600) // 60}m"
+        return f"up {delta.days}d {delta.seconds // 3600}h"
+    except Exception:
+        return started_at or "N/A"
+
+
+def _query_container_states():
+    """Query Docker daemon for expected container states. Returns list of dicts or None."""
+    if docker is None:
+        return None
+    try:
+        client = docker.DockerClient.from_env()
+    except DockerException:
+        return None
+    states = []
+    for name in EXPECTED_CONTAINERS:
+        try:
+            c = client.containers.get(name)
+            attrs = c.attrs.get("State", {})
+            health = attrs.get("Health", {}).get("Status", "N/A")
+            states.append({
+                "name": name,
+                "status": attrs.get("Status", "unknown"),
+                "health": health,
+                "started_at": attrs.get("StartedAt"),
+            })
+        except NotFound:
+            states.append({
+                "name": name,
+                "status": "not-found",
+                "health": "N/A",
+                "started_at": None,
+            })
+    client.close()
+    return states
+
+
+def _format_state_message(states):
+    """Compose a single-page Markdown message from container state dicts."""
+    lines = ["*Container Status*", ""]
+    for s in states:
+        status = s["status"]
+        status_emoji = "✅" if status == "running" else "❌" if status in ("exited", "not-found") else "⚠️"
+        health = s["health"]
+        uptime = _format_uptime(s["started_at"])
+        lines.append(
+            f"{status_emoji} *{s['name']}* — {status} | health: {health} | {uptime}"
+        )
+    return "\n".join(lines)
+
+
+async def state_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /state command: return container status to authorized chats only."""
+    if not _is_admin_chat(update):
+        return  # silent ignore for non-admin chats
+
+    states = _query_container_states()
+    if states is None:
+        await update.message.reply_text(
+            "Container runtime unavailable. Docker socket not mounted?"
+        )
+        return
+
+    text = _format_state_message(states)
+    await update.message.reply_text(text, parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------------
 # Background image sender (adapted from the original polling loop)
 # ---------------------------------------------------------------------------
 
@@ -384,6 +499,7 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("state", state_command))
     app.job_queue.run_repeating(image_sender_job, interval=5, first=5)
     app.run_polling()
 
