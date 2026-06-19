@@ -4,6 +4,16 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-002 design for "Ignore old Telegram image backlog and process fresh live"
+  is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_DESIGN.md`
+  listing affected services (`tg_bot/bot.py` primary), modules, data flows, and
+  interfaces; documenting implementation approach (newest-first sub-list sort,
+  max-age staleness filter, extended `/admin` counters/timestamps); and documenting
+  five key tradeoffs with rationale. No source code changes; all 103 tg_bot tests
+  pass; all 52 snapshot_triage tests pass; `py_compile` clean.
+
+## Prior Update
+
 - TASK-001 scope definition for "Ignore old Telegram image backlog and process fresh live"
   is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_SCOPE.md`
   defining minimum deliverable (newest-first processing of remaining unsent images,

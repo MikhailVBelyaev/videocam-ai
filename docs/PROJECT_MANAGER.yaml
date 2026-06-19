@@ -5,8 +5,18 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: 'TASK-001 scope definition for "Ignore old Telegram image backlog and process fresh live" complete; awaiting human review. Created docs/TELEGRAM_FRESH_FIRST_SCOPE.md defining newest-first processing, max-age staleness filter (MAX_IMAGE_AGE_SECONDS default 3600), extended /admin counters/timestamps, measurable acceptance criteria, and explicit exclusions. No source code changes; all 183 tests pass; py_compile clean.'
+current_goal: 'TASK-002 design for "Ignore old Telegram image backlog and process fresh live" complete; awaiting human review. Created docs/TELEGRAM_FRESH_FIRST_DESIGN.md defining newest-first sub-list sort, max-age staleness filter (MAX_IMAGE_AGE_SECONDS default 3600), extended /admin counters/timestamps, five key tradeoffs, risks, and validation plan. No source code changes; all 103 tg_bot tests pass; all 52 snapshot_triage tests pass; py_compile clean.'
 next_actions:
+- "Review docs/TELEGRAM_FRESH_FIRST_DESIGN.md for the fresh-first design."
+- "  - Verify affected services, modules, data flows, and interfaces are accurate."
+- "  - Verify implementation approach covers newest-first processing, max-age filter,"
+- "    and extended /admin counters/timestamps."
+- "  - Verify key tradeoffs are documented with rationale."
+- "  - Verify risks and mitigations are adequate."
+- "  - Verify no scope expansion into triage pipeline, web viewer, camera capture,"
+- "    persistent statistics, or Docker infrastructure."
+- "  - Decide whether to accept, revise, or reject the design."
+- "  - If accepted, prepare a TASK-003 implementation job."
 - "Review the TASK-001 scope diff for docs/TELEGRAM_FRESH_FIRST_SCOPE.md."
 - "  - Verify minimum deliverable covers newest-first processing, max-age filter,"
 - "    and extended /admin counters."

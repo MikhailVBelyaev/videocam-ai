@@ -4,11 +4,32 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-001 scope definition for "Ignore old Telegram image backlog and process fresh live"
-is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_SCOPE.md`
-defining newest-first processing, max-age staleness filter, and extended `/admin` counters.
+TASK-002 design for "Ignore old Telegram image backlog and process fresh live"
+is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_DESIGN.md`
+defining affected services, modules, data flows, interfaces, implementation approach,
+key tradeoffs, risks, and validation plan.
 
-## New Review Items (TASK-001 fresh-first scope)
+## New Review Items (TASK-002 fresh-first design)
+
+- Review `docs/TELEGRAM_FRESH_FIRST_DESIGN.md`.
+  - Verify affected services, modules, data flows, and interfaces are accurate.
+  - Verify implementation approach covers: newest-first processing of remaining unsent
+    images (stable ascending `start_index`, then `mtime`-descending sub-list sort),
+    configurable max-age staleness filter (`MAX_IMAGE_AGE_SECONDS`, default 3600),
+    extended `/admin` counters/timestamps (`_SKIPPED_STALE_COUNT`, backlog size,
+    latest capture time, latest sent time, last skip reason).
+  - Verify key tradeoffs (cursor stability vs freshness, `mtime` vs filename parsing,
+    in-memory vs persistent counters, single-string vs rich skip history, default
+    3600s) are documented with rationale.
+  - Verify risks and mitigations are adequate (overlap with pending Telegram reviews,
+    clock skew, high/low max-age, counter reset on restart, cursor safety with
+    newest-first sort).
+  - Verify no scope expansion into triage pipeline, web viewer, camera capture,
+    persistent statistics, or Docker infrastructure.
+  - Decide whether to accept, revise, or reject the design.
+  - If accepted, prepare a TASK-003 implementation job.
+
+## Prior Review Items (TASK-001 fresh-first scope)
 
 - Review `docs/TELEGRAM_FRESH_FIRST_SCOPE.md`.
   - Verify minimum deliverable covers: newest-first processing of remaining unsent images

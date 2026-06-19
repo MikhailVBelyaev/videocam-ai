@@ -1,5 +1,34 @@
 # Development Log
 
+## 2026-06-19 (Design)
+
+- Completed TASK-002 design for "Ignore old Telegram image backlog and process fresh live"
+  (Job ID: 2026-06-19_172411_videocam-ai-ignore-old-telegram-image-backlog-and-process-fr-task-002).
+  - Listed affected services (`tg_bot/bot.py` primary; no changes to `cams_grabber`,
+    `web_viewer`, `sys_monitor`), modules, data flows, and interfaces in
+    `docs/TELEGRAM_FRESH_FIRST_DESIGN.md`.
+  - Documented implementation approach: seven additive changes to `tg_bot/bot.py`:
+    (A) `MAX_IMAGE_AGE_SECONDS` env var (default 3600) with graceful fallback,
+    (B) `_SKIPPED_STALE_COUNT` and `_LAST_SKIP_REASON` module-level in-memory counters,
+    (C) newest-first sub-list sort within `_send_new_images_iteration()`
+    (stable ascending `start_index`, then `mtime`-descending `remaining` sort),
+    (D) per-image max-age staleness filter inside the send loop,
+    (E) skip-reason tracking for `"similar"`, `"non-kept"`, and `"stale"` skips,
+    (F) extended `_format_admin_message()` with stale count, backlog size,
+    latest capture time, latest sent time, and last skip reason,
+    (G) focused unit tests and README/runbook updates.
+  - Evaluated and rejected alternatives: full descending-mtime sort (breaks cursor
+    contract), folder-level staleness skip (too coarse), filename timestamp parsing
+    (fragile), and persistent counters (out of scope).
+  - Documented five key tradeoffs: two-phase sort vs full descending sort, `mtime`
+    vs filename parsing, in-memory vs persistent counters, single-string vs rich
+    skip-reason history, and default 3600s vs other defaults.
+  - Documented dependency analysis, risks, mitigations, files to change, and
+    validation plan.
+  - No source code changes. All 103 tg_bot tests pass; all 52 snapshot_triage tests pass.
+  - `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Docs)
 
 - Completed TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated
