@@ -1126,5 +1126,177 @@ class TgBotStartupStateTests(unittest.TestCase):
                 self.assertEqual(content, "2026-06-18/frame_old.jpg")
 
 
+class TgBotStartupStateQATests(unittest.TestCase):
+    """QA tests for startup state initialization edge cases and integration behavior."""
+
+    def test_startup_multiple_dated_folders_picks_latest(self):
+        """When multiple dated folders exist, _initialize_startup_state picks the latest one."""
+        with tempfile.TemporaryDirectory() as tmp:
+            old_folder = os.path.join(tmp, "2026-06-17")
+            mid_folder = os.path.join(tmp, "2026-06-18")
+            new_folder = os.path.join(tmp, "2026-06-19")
+            for d in (old_folder, mid_folder, new_folder):
+                os.makedirs(d)
+            # Put an image in each; the one in 2026-06-19 should be chosen
+            old_img = os.path.join(old_folder, "old.jpg")
+            new_img = os.path.join(new_folder, "new.jpg")
+            open(old_img, "w").close()
+            open(new_img, "w").close()
+            # Make old image have a newer mtime to prove we pick by folder date, not mtime
+            os.utime(old_img, (3000000, 3000000))
+            os.utime(new_img, (2000000, 2000000))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                result = _initialize_startup_state()
+                # Must pick image from 2026-06-19, not 2026-06-17
+                self.assertEqual(result[0], "2026-06-19")
+                self.assertIn("new.jpg", result[1])
+                self.assertNotIn("old.jpg", result[1])
+
+    def test_startup_sets_module_globals(self):
+        """_initialize_startup_state mutates LAST_SENT_IMAGE and LAST_SENT_FOLDER globals."""
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            img_path = os.path.join(folder, "frame_001.jpg")
+            open(img_path, "w").close()
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", None):
+                result = _initialize_startup_state()
+                # Verify the module globals are updated
+                self.assertIsNotNone(bot_module.LAST_SENT_IMAGE)
+                self.assertIsNotNone(bot_module.LAST_SENT_FOLDER)
+                self.assertEqual(bot_module.LAST_SENT_FOLDER, "2026-06-19")
+                self.assertIn("frame_001.jpg", bot_module.LAST_SENT_IMAGE)
+
+    def test_startup_preserves_last_sent_timestamp(self):
+        """_initialize_startup_state does NOT update _LAST_SENT_TIMESTAMP.
+        
+        This is critical: leaving _LAST_SENT_TIMESTAMP at its initial value (0.0)
+        causes the first sender iteration to bypass similarity check via cooldown,
+        which is the intended behavior per design doc tradeoff 3.3.
+        """
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            img_path = os.path.join(folder, "frame_001.jpg")
+            open(img_path, "w").close()
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            # Save a pre-set timestamp value
+            original_ts = bot_module._LAST_SENT_TIMESTAMP
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch.object(bot_module, "LAST_SENT_IMAGE", None), \
+                 patch.object(bot_module, "LAST_SENT_FOLDER", None):
+                _initialize_startup_state()
+                # _LAST_SENT_TIMESTAMP must NOT be modified by startup initialization
+                self.assertEqual(bot_module._LAST_SENT_TIMESTAMP, original_ts)
+
+    def test_startup_oserror_in_directory_access_returns_none(self):
+        """When os.listdir raises OSError, _get_latest_run_date catches it and returns
+        None, causing _initialize_startup_state to return (None, None) without crashing.
+        This tests the full error propagation chain from filesystem error through
+        _get_latest_run_date → _get_latest_image_path → _initialize_startup_state."""
+        with tempfile.TemporaryDirectory() as tmp:
+            # Create a dated folder so _get_latest_run_date would normally find it
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.os.listdir", side_effect=OSError("permission denied")):
+                result = _initialize_startup_state()
+                self.assertIsNone(result[0])
+                self.assertIsNone(result[1])
+                # State file should NOT be written when initialization fails
+                self.assertFalse(os.path.exists(state_file))
+
+    def test_startup_state_file_format_is_correct(self):
+        """The .last_sent_file written by _initialize_startup_state has the exact
+        format 'folder/filename\\n' expected by load_last_sent_file."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            img_path = os.path.join(folder, "frame_002.jpg")
+            open(img_path, "w").close()
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                _initialize_startup_state()
+                with open(state_file, "r") as f:
+                    content = f.read()
+                # Format should be exactly: folder_name/<relative_filename>\n
+                # where relative filename is just the basename since it's in the folder
+                lines = content.strip().split("/")
+                self.assertEqual(len(lines), 2)
+                self.assertEqual(lines[0], "2026-06-19")
+                self.assertEqual(lines[1], "frame_002.jpg")
+
+                # Verify load_last_sent_file can read it back correctly
+                folder_loaded, image_loaded = load_last_sent_file()
+                self.assertEqual(folder_loaded, "2026-06-19")
+                self.assertIn("frame_002.jpg", image_loaded)
+
+    def test_iteration_starts_after_initialized_image(self):
+        """After startup initialization, _send_new_images_iteration starts from the
+        image AFTER the initialized one, not from index 0. This is the core
+        acceptance criterion that prevents backlog drain on restart."""
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            # Create 5 images; initialize to frame_003 so iteration should
+            # start from frame_004
+            for i in range(1, 6):
+                path = os.path.join(folder, f"frame_{i:03d}.jpg")
+                open(path, "w").close()
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+            init_image = os.path.join(folder, "frame_003.jpg")
+
+            # Initialize state as if _initialize_startup_state set it to frame_003
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", init_image), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", "2026-06-19"), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Only frame_004 and frame_005 should be sent;
+                # frame_001 through frame_003 should be skipped (before start_index)
+                sent_files = [call[0][0] for call in mock_send.call_args_list]
+                sent_basenames = [os.path.basename(f) for f in sent_files]
+                self.assertNotIn("frame_001.jpg", sent_basenames)
+                self.assertNotIn("frame_002.jpg", sent_basenames)
+                self.assertNotIn("frame_003.jpg", sent_basenames)
+                self.assertIn("frame_004.jpg", sent_basenames)
+                self.assertIn("frame_005.jpg", sent_basenames)
+
+
 if __name__ == "__main__":
     unittest.main()

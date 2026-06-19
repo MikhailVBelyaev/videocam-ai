@@ -1,5 +1,21 @@
 # Development Log
 
+## 2026-06-19 (QA)
+
+- Completed TASK-004 QA validation for "Fix remaining Telegram image backlog problem"
+  (Job ID: 2026-06-19_151143_videocam-ai-fix-remaining-telegram-image-backlog-problem-task-004).
+  - Added 6 focused QA tests in `tests/test_tg_bot.py` (TgBotStartupStateQATests):
+    - `test_startup_multiple_dated_folders_picks_latest`: verifies `_initialize_startup_state` picks the latest dated folder, not an older one, even when older images have newer mtimes.
+    - `test_startup_sets_module_globals`: verifies `_initialize_startup_state` correctly mutates `LAST_SENT_IMAGE` and `LAST_SENT_FOLDER` module globals.
+    - `test_startup_preserves_last_sent_timestamp`: verifies `_initialize_startup_state` does NOT update `_LAST_SENT_TIMESTAMP` (confirming the cooldown bypass tradeoff from design doc section 3.3).
+    - `test_startup_oserror_in_directory_access_returns_none`: verifies full error propagation chain from `os.listdir` OSError through `_get_latest_run_date` → `_get_latest_image_path` → `_initialize_startup_state` returns `(None, None)` without crashing and without writing a state file.
+    - `test_startup_state_file_format_is_correct`: verifies the `.last_sent_file` written by `_initialize_startup_state` has the exact `folder/filename\n` format expected by `load_last_sent_file`, and that `load_last_sent_file` can read it back correctly.
+    - `test_iteration_starts_after_initialized_image`: verifies that after startup initialization, `_send_new_images_iteration` starts from the image AFTER the initialized one, not from index 0 — this is the core acceptance criterion that prevents backlog drain on restart.
+  - No source code changes required.
+  - All 76 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 156 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Implementation)
 
 - Completed TASK-003 implementation for "Fix remaining Telegram image backlog problem"

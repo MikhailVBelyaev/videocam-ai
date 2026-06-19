@@ -4,12 +4,30 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-003 implementation for "Fix remaining Telegram image backlog problem" is complete
-and in `review_required`. Modified `tg_bot/bot.py` to add `_initialize_startup_state()`
-and call it from `main()` when no `.last_sent_file` exists. Added 4 focused tests in
-`tests/test_tg_bot.py`. Updated `README.md` and `docs/TG_BOT_RUNBOOK.md`.
+TASK-004 QA validation for "Fix remaining Telegram image backlog problem" is complete
+and in `review_required`. Added 6 focused QA tests in `tests/test_tg_bot.py`
+(TgBotStartupStateQATests) covering multiple-dated-folder selection, module global
+mutation, `_LAST_SENT_TIMESTAMP` preservation, OSError error propagation, state file
+format correctness, and iteration start-index behavior after initialization.
+No source code changes required. All 156 tests pass.
 
-## New Review Items (TASK-003 Telegram backlog implementation)
+## New Review Items (TASK-004 Telegram backlog QA)
+
+- Review `tests/test_tg_bot.py` diff for 6 new QA tests (TgBotStartupStateQATests).
+  - Verify `_initialize_startup_state` picks the latest dated folder when multiple exist.
+  - Verify module globals `LAST_SENT_IMAGE` and `LAST_SENT_FOLDER` are correctly mutated.
+  - Verify `_LAST_SENT_TIMESTAMP` is NOT modified by startup initialization
+    (confirming design doc tradeoff 3.3).
+  - Verify OSError in `os.listdir` propagates correctly through
+    `_get_latest_run_date` → `_get_latest_image_path` → `_initialize_startup_state`
+    returning `(None, None)` without crashing or writing a state file.
+  - Verify `.last_sent_file` format written by `_initialize_startup_state` is
+    exactly `folder/filename\n` and readable by `load_last_sent_file`.
+  - Verify `_send_new_images_iteration` starts from the image after the initialized
+    one, not from index 0 (core backlog-drain prevention).
+  - Decide whether to accept, revise, or reject the QA tests.
+
+## Prior Review Items (TASK-003 Telegram backlog implementation)
 
 - Review `tg_bot/bot.py` diff for the Telegram backlog fix.
   - Verify `_initialize_startup_state()` scans the latest dated folder and sets
