@@ -4,9 +4,21 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-005 documentation for "Fix production Telegram image delivery and admin statistics"
-is complete and in `review_required`. `docs/TG_BOT_RUNBOOK.md` updated with sender
-safeguards, `/admin` photo behavior, new env vars, and troubleshooting. All 146 tests pass.
+TASK-001 scope for "Fix remaining Telegram image backlog problem" is complete and
+in `review_required`. `docs/TELEGRAM_BACKLOG_SCOPE.md` created with minimum
+deliverable, acceptance criteria, and exclusions.
+
+## New Review Items (TASK-001 Telegram backlog scope)
+
+- Review `docs/TELEGRAM_BACKLOG_SCOPE.md`.
+  - Verify minimum deliverable covers: startup state initialization when
+    `.last_sent_file` is missing, setting `LAST_SENT_IMAGE` to the most recent
+    image in the latest dated folder without sending it.
+  - Verify acceptance criteria are measurable and exclusions are explicit.
+  - Verify no scope expansion into camera capture, triage pipeline, web viewer,
+    object detection, or container infrastructure.
+  - Decide whether to accept, revise, or reject the scope.
+  - If accepted, prepare a TASK-002 design job.
 
 ## Completed Review Items (TASK-005 Telegram Docs)
 

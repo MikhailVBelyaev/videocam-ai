@@ -1,5 +1,19 @@
 # Development Log
 
+## 2026-06-19 (Planning)
+
+- Completed TASK-001 scope definition for "Fix remaining Telegram image backlog problem"
+  (Job ID: 2026-06-19_151143_videocam-ai-fix-remaining-telegram-image-backlog-problem-task-001).
+  - Defined minimum deliverable: on startup with no `.last_sent_file`, initialize
+    `LAST_SENT_IMAGE` and `LAST_SENT_FOLDER` to the most recently modified image
+    in the latest dated folder without sending it, so the next iteration only
+    processes newly arriving frames.
+  - Recorded measurable acceptance criteria and explicit exclusions in
+    `docs/TELEGRAM_BACKLOG_SCOPE.md`.
+  - Documented risks: most recent image may never have been sent, clock skew may
+    misorder images, and overlap with pending Telegram delivery reviews.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Docs)
 
 - Completed TASK-005 documentation for "Fix production Telegram image delivery and admin statistics"
