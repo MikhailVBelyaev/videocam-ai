@@ -2,6 +2,104 @@
 
 ## 2026-06-19 (Docs)
 
+- Completed TASK-005 documentation for "Fix production Telegram image delivery and admin statistics"
+  (Job ID: 2026-06-19_140208_videocam-ai-fix-production-telegram-image-delivery-and-admin-task-005).
+  - Updated `docs/TG_BOT_RUNBOOK.md` with image sender safeguards (concurrency guard,
+    per-iteration send cap, cooldown bypass), `/admin` latest image file send behavior,
+    new environment variables (`MAX_IMAGES_PER_ITERATION`, `SEND_COOLDOWN_SECONDS`),
+    expanded troubleshooting table, and updated validation counts (66 tg_bot tests,
+    146 total).
+  - Verified `README.md` Telegram bot section is consistent with implementation.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/PROJECT_MANAGER.yaml`, and `docs/DEVELOPMENT_LOG.md`.
+  - All 66 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 146 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
+## 2026-06-19 (QA Validation)
+
+- Completed TASK-004 QA validation for "Fix production Telegram image delivery and admin statistics"
+  (Job ID: 2026-06-19_140208_videocam-ai-fix-production-telegram-image-delivery-and-admin-task-004).
+  - Added 13 focused QA tests in `tests/test_tg_bot.py`, bringing total from 53 to 66 tg_bot tests:
+    - `TgBotSenderTests`: sender job runs when lock is free, iteration skips similar images
+      within cooldown, iteration sends all when under cap.
+    - `TgBotSenderPhotoQATests`: send_photo updates _LAST_SENT_TIMESTAMP on success,
+      send_photo does not update timestamp on failure.
+    - `TgBotLatestImageQATests`: _get_latest_image_path returns None for no dated folders,
+      empty folder, and OSError; picks most recently modified image; ignores non-image files.
+    - `TgBotAdminTests`: _get_latest_run_date OSError returns None; _summarize_live_output
+      returns None for no media and OSError.
+  - No source code changes required.
+  - All 66 tg_bot tests pass; all 146 total tests pass. `py_compile` clean.
+
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "Fix production Telegram image delivery and admin statistics"
+  (Job ID: 2026-06-19_140208_videocam-ai-fix-production-telegram-image-delivery-and-admin-task-003).
+  - Modified `tg_bot/bot.py`:
+    - Added `_SENDER_LOCK = asyncio.Lock()` module-level guard to prevent overlapping
+      `image_sender_job` executions.
+    - Added `_LAST_SENT_TIMESTAMP = 0.0` and `SEND_COOLDOWN_SECONDS` env var (default 300)
+      for time-based duplicate bypass.
+    - Added `MAX_IMAGES_PER_ITERATION` env var (default 5) for per-iteration send cap.
+    - Modified `send_photo()` to update `_LAST_SENT_TIMESTAMP` on success.
+    - Modified `_send_new_images_iteration()` to enforce the cap and bypass similarity
+      check when the cooldown has expired.
+    - Modified `image_sender_job()` to acquire the lock and skip when already locked.
+    - Added `_get_latest_image_path()` to find the most recently modified image in the
+      latest dated output folder.
+    - Extended `admin_command()` to send the latest image file via `reply_photo` after
+      the existing text summary, with graceful fallback on missing image or send failure.
+  - Added 6 focused tests in `tests/test_tg_bot.py`:
+    - `TgBotSenderTests`: concurrency guard skip, send cap enforcement, cooldown bypass.
+    - `TgBotAdminPhotoTests`: `/admin` sends latest image, no-image fallback, image send
+      failure fallback.
+  - Updated `README.md` with `MAX_IMAGES_PER_ITERATION`, `SEND_COOLDOWN_SECONDS`,
+    `/admin` photo behavior, and sender safeguard descriptions.
+  - All 53 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+    Total 133 tests pass.
+  - `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+  - Status: `review_required`.
+
+## 2026-06-19 (Design)
+
+- Completed TASK-002 design for "Fix production Telegram image delivery and admin statistics"
+  (Job ID: 2026-06-19_140208_videocam-ai-fix-production-telegram-image-delivery-and-admin-task-002).
+  - Listed affected services (`tg_bot/bot.py` primary; no changes to `cams_grabber`,
+    `web_viewer`, `sys_monitor`), modules, data flows, and interfaces in
+    `docs/TELEGRAM_IMAGE_DELIVERY_DESIGN.md`.
+  - Documented implementation approach: additive changes to `tg_bot/bot.py`
+    — `asyncio.Lock` concurrency guard for `image_sender_job`, per-iteration send
+    cap (`MAX_IMAGES_PER_ITERATION`, default 5), time-based duplicate bypass cooldown
+    (`SEND_COOLDOWN_SECONDS`, default 300), and `/admin` sending the latest image
+    file alongside the existing text summary.
+  - Evaluated and rejected alternatives: `threading.Lock` inside sync function,
+    persistent cooldown timestamp in `.last_sent_file`, cooldown flag timer,
+    bypass-for-entire-iteration.
+  - Documented 5 key tradeoffs: concurrency guard placement, send cap boundary,
+    cooldown time source, `/admin` image send method, and bypass scope.
+  - Documented dependency analysis, risks, mitigations, files to change, and
+    validation plan.
+  - All 127 tests pass; no source code changes.
+  - `py_compile` clean.
+  - Status: `review_required`.
+
+## 2026-06-19 (Planning)
+
+- Completed TASK-001 scope definition for "Fix production Telegram image delivery and admin statistics"
+  (Job ID: 2026-06-19_140208_videocam-ai-fix-production-telegram-image-delivery-and-admin-task-001).
+  - Defined minimum deliverable: concurrency guard and per-iteration send cap for
+    `image_sender_job`, time-based duplicate bypass cooldown, and `/admin` command
+    sending the actual latest image file alongside the existing text summary.
+  - Recorded measurable acceptance criteria and explicit exclusions in
+    `docs/TELEGRAM_IMAGE_DELIVERY_SCOPE.md`.
+  - Documented risks: cooldown may send unwanted similar frames, cap may delay
+    high-activity bursts, large file upload limits, and overlap with pending
+    `/admin`/`/state` review items.
+  - Status: `review_required`.
+
+## 2026-06-19 (Docs)
+
 - Completed TASK-005 documentation for "Change /admin: add web server page with cars and"
   (Job ID: 2026-06-19_060847_videocam-ai-change-admin-add-web-server-page-with-cars-and-task-005).
   - Verified `README.md` web viewer section against `web_viewer/app.py` implementation.

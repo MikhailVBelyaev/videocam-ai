@@ -12,12 +12,14 @@ from tg_bot.bot import (
     _format_admin_message,
     _format_state_message,
     _format_uptime,
+    _get_latest_image_path,
     _get_latest_run_date,
     _is_admin_chat,
     _is_fresh,
     _query_container_states,
     _read_latest_summary,
     _summarize_live_output,
+    send_photo,
 )
 
 
@@ -278,10 +280,11 @@ class TgBotAdminTests(unittest.TestCase):
              patch("tg_bot.bot._read_latest_summary", return_value=None), \
              patch("tg_bot.bot._summarize_live_output", return_value=summary), \
              patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
-             patch("tg_bot.bot._is_fresh", return_value=True):
+             patch("tg_bot.bot._is_fresh", return_value=True), \
+             patch("tg_bot.bot._get_latest_image_path", return_value=None):
             coro = admin_command(update, context)
             asyncio.get_event_loop().run_until_complete(coro)
-            text = update.message.reply_text.call_args[0][0]
+            text = update.message.reply_text.call_args_list[0][0][0]
             self.assertIn("3 total, 3 kept", text)
             self.assertIn("Live output summary", text)
 
@@ -306,16 +309,54 @@ class TgBotAdminTests(unittest.TestCase):
         with patch("tg_bot.bot.ADMIN_CHAT_ID", "12345"), \
              patch("tg_bot.bot._read_latest_summary", return_value=summary), \
              patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-18"), \
-             patch("tg_bot.bot._is_fresh", return_value=True):
+             patch("tg_bot.bot._is_fresh", return_value=True), \
+             patch("tg_bot.bot._get_latest_image_path", return_value=None):
             coro = admin_command(update, context)
             asyncio.get_event_loop().run_until_complete(coro)
-            call_args = update.message.reply_text.call_args
+            call_args = update.message.reply_text.call_args_list[0]
             text = call_args[0][0]
             self.assertIn("50", text)
             self.assertIn("10", text)
             self.assertIn("8", text)
             self.assertIn("2", text)
             self.assertEqual(call_args[1]["parse_mode"], "Markdown")
+
+    def test_get_latest_run_date_oserror(self):
+        """OSError during directory listing returns None without crashing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "2026-06-19"))
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.os.listdir", side_effect=OSError("permission denied")):
+                result = _get_latest_run_date()
+                self.assertIsNone(result)
+
+    def test_summarize_live_output_no_media_returns_none(self):
+        """_summarize_live_output returns None when folder has no media files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp):
+                folder = os.path.join(tmp, "2026-06-19")
+                os.makedirs(folder)
+                # Only hidden/dot files and non-media files
+                open(os.path.join(folder, ".hidden"), "w").close()
+                open(os.path.join(folder, "notes.txt"), "w").close()
+
+                result = _summarize_live_output()
+
+        self.assertIsNone(result)
+
+    def test_summarize_live_output_oserror_returns_none(self):
+        """_summarize_live_output returns None when listing the latest folder fails."""
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "2026-06-19"))
+            def listdir_side_effect(path):
+                if path == tmp:
+                    return ["2026-06-19"]
+                raise OSError("I/O error")
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect):
+                result = _summarize_live_output()
+
+        self.assertIsNone(result)
 
     # ------- /state command tests -------
 
@@ -631,6 +672,370 @@ class TgBotAdminTests(unittest.TestCase):
                 self.assertIn("⚠️", line)
             elif "svc_dead" in line:
                 self.assertIn("⚠️", line)
+
+
+class TgBotSenderTests(unittest.TestCase):
+    def test_image_sender_job_skips_when_locked(self):
+        """A second scheduled job is skipped when the sender lock is already held."""
+        import asyncio
+        from tg_bot.bot import image_sender_job
+
+        with patch("tg_bot.bot._SENDER_LOCK.locked", return_value=True), \
+             patch("tg_bot.bot._send_new_images_iteration") as mock_iter:
+            coro = image_sender_job(MagicMock())
+            asyncio.get_event_loop().run_until_complete(coro)
+            mock_iter.assert_not_called()
+
+    def test_send_new_images_iteration_caps_at_max(self):
+        """No more than MAX_IMAGES_PER_ITERATION images are sent in one iteration."""
+        from tg_bot.bot import _send_new_images_iteration, MAX_IMAGES_PER_ITERATION
+        folder = "2026-06-19"
+        files = [f"frame_{i:03d}.jpg" for i in range(10)]
+
+        def listdir_side_effect(path):
+            if path == "output":
+                return [folder]
+            if folder in path:
+                return files
+            return []
+
+        with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+             patch("tg_bot.bot.os.path.isdir", return_value=True), \
+             patch("tg_bot.bot.os.path.isfile", return_value=True), \
+             patch("tg_bot.bot.are_images_similar", return_value=False), \
+             patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+             patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+             patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+             patch("tg_bot.bot.cleanup_old_folders"):
+            _send_new_images_iteration()
+            self.assertEqual(mock_send.call_count, MAX_IMAGES_PER_ITERATION)
+
+    def test_send_new_images_iteration_cooldown_bypass(self):
+        """When cooldown expired, a perceptually similar image is still sent."""
+        from tg_bot.bot import _send_new_images_iteration, SEND_COOLDOWN_SECONDS
+        folder = "2026-06-19"
+        files = ["frame_001.jpg"]
+
+        def listdir_side_effect(path):
+            if path == "output":
+                return [folder]
+            if folder in path:
+                return files
+            return []
+
+        with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+             patch("tg_bot.bot.os.path.isdir", return_value=True), \
+             patch("tg_bot.bot.os.path.isfile", return_value=True), \
+             patch("tg_bot.bot.are_images_similar", return_value=True), \
+             patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+             patch("tg_bot.bot.LAST_SENT_FOLDER", folder), \
+             patch("tg_bot.bot.LAST_SENT_IMAGE", os.path.join("output", folder, "prev.jpg")), \
+             patch("tg_bot.bot._LAST_SENT_TIMESTAMP", 0.0), \
+             patch("tg_bot.bot.cleanup_old_folders"):
+            _send_new_images_iteration()
+            mock_send.assert_called_once()
+
+    # ------- QA: additional focused sender tests -------
+
+    def test_sender_job_runs_when_lock_free(self):
+        """When the sender lock is free, image_sender_job executes the iteration."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from tg_bot.bot import image_sender_job
+
+        mock_lock = MagicMock()
+        mock_lock.locked.return_value = False
+        mock_lock.__aenter__ = AsyncMock(return_value=None)
+        mock_lock.__aexit__ = AsyncMock(return_value=None)
+
+        context = MagicMock()
+        with patch("tg_bot.bot._SENDER_LOCK", mock_lock), \
+             patch("tg_bot.bot._send_new_images_iteration") as mock_iter:
+            coro = image_sender_job(context)
+            asyncio.get_event_loop().run_until_complete(coro)
+            mock_iter.assert_called_once()
+
+    def test_iteration_skips_similar_within_cooldown(self):
+        """When cooldown has NOT expired, perceptually similar images are skipped."""
+        import time
+        from tg_bot.bot import _send_new_images_iteration
+
+        folder = "2026-06-19"
+        files = ["frame_001.jpg", "frame_002.jpg"]
+
+        def listdir_side_effect(path):
+            if path == "output":
+                return [folder]
+            if folder in path:
+                return files
+            return []
+
+        recent_timestamp = time.time() - 10  # 10 seconds ago, well within 300s cooldown
+        with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+             patch("tg_bot.bot.os.path.isdir", return_value=True), \
+             patch("tg_bot.bot.os.path.isfile", return_value=True), \
+             patch("tg_bot.bot.are_images_similar", return_value=True), \
+             patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+             patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+             patch("tg_bot.bot.LAST_SENT_IMAGE", os.path.join("output", folder, "prev.jpg")), \
+             patch("tg_bot.bot._LAST_SENT_TIMESTAMP", recent_timestamp), \
+             patch("tg_bot.bot.cleanup_old_folders"):
+            _send_new_images_iteration()
+            # Both images are similar and cooldown is NOT expired, so none should be sent
+            mock_send.assert_not_called()
+
+    def test_iteration_sends_all_under_cap(self):
+        """When fewer images than MAX_IMAGES_PER_ITERATION exist, all are sent."""
+        from tg_bot.bot import _send_new_images_iteration
+        folder = "2026-06-19"
+        files = ["frame_001.jpg", "frame_002.jpg"]  # Only 2, under default cap of 5
+
+        def listdir_side_effect(path):
+            if path == "output":
+                return [folder]
+            if folder in path:
+                return files
+            return []
+
+        with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+             patch("tg_bot.bot.os.path.isdir", return_value=True), \
+             patch("tg_bot.bot.os.path.isfile", return_value=True), \
+             patch("tg_bot.bot.are_images_similar", return_value=False), \
+             patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+             patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+             patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+             patch("tg_bot.bot.cleanup_old_folders"):
+            _send_new_images_iteration()
+            self.assertEqual(mock_send.call_count, 2)
+
+
+class TgBotAdminPhotoTests(unittest.TestCase):
+    def test_admin_command_sends_latest_image(self):
+        """Admin chat receives the latest image file after the text summary."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from tg_bot.bot import admin_command
+
+        update = MagicMock()
+        update.effective_chat.id = 12345
+        update.message.reply_text = AsyncMock()
+        update.message.reply_photo = AsyncMock()
+        context = MagicMock()
+
+        summary = {
+            "total_images": 10,
+            "kept_images": 5,
+            "total_objects_by_type": {"car": 2, "person": 1},
+            "missing_expected_objects": [],
+        }
+
+        with patch("tg_bot.bot.ADMIN_CHAT_ID", "12345"), \
+             patch("tg_bot.bot._read_latest_summary", return_value=summary), \
+             patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+             patch("tg_bot.bot._is_fresh", return_value=True), \
+             patch("tg_bot.bot._get_latest_image_path", return_value="/output/2026-06-19/frame.jpg"):
+            coro = admin_command(update, context)
+            asyncio.get_event_loop().run_until_complete(coro)
+            update.message.reply_photo.assert_called_once_with(photo="/output/2026-06-19/frame.jpg")
+
+    def test_admin_command_no_image_fallback(self):
+        """When no latest image exists, /admin sends a text fallback instead of a photo."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from tg_bot.bot import admin_command
+
+        update = MagicMock()
+        update.effective_chat.id = 12345
+        update.message.reply_text = AsyncMock()
+        update.message.reply_photo = AsyncMock()
+        context = MagicMock()
+
+        summary = {
+            "total_images": 10,
+            "kept_images": 5,
+            "total_objects_by_type": {"car": 2, "person": 1},
+            "missing_expected_objects": [],
+        }
+
+        with patch("tg_bot.bot.ADMIN_CHAT_ID", "12345"), \
+             patch("tg_bot.bot._read_latest_summary", return_value=summary), \
+             patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+             patch("tg_bot.bot._is_fresh", return_value=True), \
+             patch("tg_bot.bot._get_latest_image_path", return_value=None):
+            coro = admin_command(update, context)
+            asyncio.get_event_loop().run_until_complete(coro)
+            update.message.reply_photo.assert_not_called()
+            self.assertEqual(update.message.reply_text.call_count, 2)
+            self.assertEqual(update.message.reply_text.call_args_list[1][0][0], "No latest image available.")
+
+    def test_admin_command_image_send_failure_fallback(self):
+        """If reply_photo raises, /admin falls back to a text message."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from tg_bot.bot import admin_command
+
+        update = MagicMock()
+        update.effective_chat.id = 12345
+        update.message.reply_text = AsyncMock()
+        update.message.reply_photo = AsyncMock(side_effect=Exception("TelegramError"))
+        context = MagicMock()
+
+        summary = {
+            "total_images": 10,
+            "kept_images": 5,
+            "total_objects_by_type": {"car": 2, "person": 1},
+            "missing_expected_objects": [],
+        }
+
+        with patch("tg_bot.bot.ADMIN_CHAT_ID", "12345"), \
+             patch("tg_bot.bot._read_latest_summary", return_value=summary), \
+             patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+             patch("tg_bot.bot._is_fresh", return_value=True), \
+             patch("tg_bot.bot._get_latest_image_path", return_value="/output/2026-06-19/frame.jpg"):
+            coro = admin_command(update, context)
+            asyncio.get_event_loop().run_until_complete(coro)
+            update.message.reply_photo.assert_called_once()
+            self.assertEqual(update.message.reply_text.call_count, 2)
+            self.assertEqual(update.message.reply_text.call_args_list[1][0][0], "No latest image available.")
+
+
+class TgBotSenderPhotoQATests(unittest.TestCase):
+    """QA tests for send_photo timestamp behavior (cooldown correctness)."""
+
+    def test_send_photo_updates_last_sent_timestamp_on_success(self):
+        """send_photo sets _LAST_SENT_TIMESTAMP when the Telegram API returns 200."""
+        import time
+        import tg_bot.bot as bot_module
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            f.write(b"fake image data")
+            tmp_path = f.name
+
+        try:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = "OK"
+
+            with patch("tg_bot.bot.BOT_TOKEN", "test_token"), \
+                 patch("tg_bot.bot.CHAT_ID", "12345"), \
+                 patch("tg_bot.bot.requests.post", return_value=mock_response), \
+                 patch("tg_bot.bot.save_last_sent_file"), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot._LAST_SENT_TIMESTAMP", 0.0):
+                before = time.time()
+                result = send_photo(tmp_path)
+                after = time.time()
+                self.assertTrue(result)
+                # Verify _LAST_SENT_TIMESTAMP was updated to a value close to now
+                self.assertGreaterEqual(bot_module._LAST_SENT_TIMESTAMP, before)
+                self.assertLessEqual(bot_module._LAST_SENT_TIMESTAMP, after)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_send_photo_does_not_update_timestamp_on_failure(self):
+        """send_photo does not update _LAST_SENT_TIMESTAMP when the API returns non-200."""
+        import tg_bot.bot as bot_module
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            f.write(b"fake image data")
+            tmp_path = f.name
+
+        try:
+            mock_response = MagicMock()
+            mock_response.status_code = 403
+            mock_response.text = "Forbidden"
+
+            original_ts = bot_module._LAST_SENT_TIMESTAMP
+            with patch("tg_bot.bot.BOT_TOKEN", "test_token"), \
+                 patch("tg_bot.bot.CHAT_ID", "12345"), \
+                 patch("tg_bot.bot.requests.post", return_value=mock_response), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                result = send_photo(tmp_path)
+                self.assertFalse(result)
+                # _LAST_SENT_TIMESTAMP should not have been updated
+                self.assertEqual(bot_module._LAST_SENT_TIMESTAMP, original_ts)
+        finally:
+            os.unlink(tmp_path)
+
+
+class TgBotLatestImageQATests(unittest.TestCase):
+    """QA tests for _get_latest_image_path edge cases."""
+
+    def test_no_dated_folders_returns_none(self):
+        """_get_latest_image_path returns None when no dated folders exist."""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot._get_latest_run_date", return_value=None):
+                result = _get_latest_image_path()
+                self.assertIsNone(result)
+
+    def test_empty_folder_returns_none(self):
+        """_get_latest_image_path returns None when the dated folder has no images."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            # No files in the folder
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"):
+                result = _get_latest_image_path()
+                self.assertIsNone(result)
+
+    def test_picks_most_recently_modified_image(self):
+        """_get_latest_image_path returns the image with the most recent mtime."""
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            old_path = os.path.join(folder, "frame_001.jpg")
+            new_path = os.path.join(folder, "frame_002.jpg")
+            # Create both files
+            open(old_path, "w").close()
+            open(new_path, "w").close()
+            # Make frame_002 newer
+            os.utime(old_path, (1000000, 1000000))
+            os.utime(new_path, (2000000, 2000000))
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"):
+                result = _get_latest_image_path()
+                self.assertEqual(result, new_path)
+
+    def test_ignores_non_image_files(self):
+        """_get_latest_image_path returns only .jpg/.jpeg/.png files, ignoring others."""
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            img_path = os.path.join(folder, "frame_001.jpg")
+            txt_path = os.path.join(folder, "notes.txt")
+            vid_path = os.path.join(folder, "clip.mp4")
+            open(img_path, "w").close()
+            open(txt_path, "w").close()
+            open(vid_path, "w").close()
+            # Make non-image files newer
+            os.utime(txt_path, (3000000, 3000000))
+            os.utime(vid_path, (3000000, 3000000))
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"):
+                result = _get_latest_image_path()
+                self.assertEqual(result, img_path)
+
+    def test_oserror_returns_none(self):
+        """_get_latest_image_path returns None on OSError when listing the folder."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot._get_latest_run_date", return_value="2026-06-19"), \
+                 patch("os.listdir", side_effect=OSError("permission denied")):
+                result = _get_latest_image_path()
+                self.assertIsNone(result)
 
 
 if __name__ == "__main__":

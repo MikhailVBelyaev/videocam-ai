@@ -52,6 +52,11 @@ KEEP_DAYS = 3
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
 
+MAX_IMAGES_PER_ITERATION = int(os.getenv("MAX_IMAGES_PER_ITERATION", "5"))
+SEND_COOLDOWN_SECONDS = int(os.getenv("SEND_COOLDOWN_SECONDS", "300"))
+_SENDER_LOCK = asyncio.Lock()
+_LAST_SENT_TIMESTAMP = 0.0
+
 
 def cleanup_old_folders():
     """
@@ -122,7 +127,7 @@ def save_last_sent_file(folder: str, file_path: str):
 
 
 def send_photo(file_path: str):
-    global LAST_SENT_IMAGE, LAST_SENT_FOLDER
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _LAST_SENT_TIMESTAMP
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     with open(file_path, "rb") as photo:
         res = requests.post(url, data={"chat_id": CHAT_ID}, files={"photo": photo})
@@ -133,6 +138,7 @@ def send_photo(file_path: str):
         save_last_sent_file(folder, file_path)
         LAST_SENT_IMAGE = file_path
         LAST_SENT_FOLDER = folder
+        _LAST_SENT_TIMESTAMP = time.time()
         return True
     else:
         logger.error(f"⚠️ Failed to send {file_path}: {res.text}")
@@ -177,6 +183,26 @@ def _get_latest_run_date() -> str | None:
         if not date_dirs:
             return None
         return max(date_dirs)
+    except OSError:
+        return None
+
+
+def _get_latest_image_path() -> str | None:
+    """Return absolute path to the most recently modified image in the latest dated folder, or None."""
+    run_date = _get_latest_run_date()
+    if not run_date:
+        return None
+    folder_path = os.path.join(OUTPUT_DIR, run_date)
+    try:
+        files = [
+            f for f in os.listdir(folder_path)
+            if f.lower().endswith(IMAGE_EXTENSIONS)
+            and os.path.isfile(os.path.join(folder_path, f))
+        ]
+        if not files:
+            return None
+        latest = max(files, key=lambda f: os.path.getmtime(os.path.join(folder_path, f)))
+        return os.path.join(folder_path, latest)
     except OSError:
         return None
 
@@ -303,6 +329,16 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = _format_admin_message(summary, run_date, fresh)
     await update.message.reply_text(text, parse_mode="Markdown")
+
+    image_path = _get_latest_image_path()
+    if image_path:
+        try:
+            await update.message.reply_photo(photo=image_path)
+        except Exception as e:
+            logger.error(f"Failed to send latest image: {e}")
+            await update.message.reply_text("No latest image available.")
+    else:
+        await update.message.reply_text("No latest image available.")
 
 
 # ---------------------------------------------------------------------------
@@ -465,15 +501,21 @@ def _send_new_images_iteration():
             except ValueError:
                 start_index = 0
 
+        sent_count = 0
         for filename in image_files[start_index:]:
             path = os.path.join(folder_path, filename)
             if os.path.isfile(path):
                 if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path):
-                    logger.info(f"⚠️ Skipped {filename} (too similar to last sent image)")
-                    continue
+                    cooldown_expired = (time.time() - _LAST_SENT_TIMESTAMP) > SEND_COOLDOWN_SECONDS
+                    if cooldown_expired:
+                        logger.info(f"Cooldown expired; sending {filename} despite similarity")
+                    else:
+                        logger.info(f"Skipped {filename} (too similar to last sent image)")
+                        continue
                 if send_photo(path):
-                    # LAST_SENT_IMAGE and state file updated inside send_photo
-                    pass
+                    sent_count += 1
+                    if sent_count >= MAX_IMAGES_PER_ITERATION:
+                        break
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
 
@@ -482,7 +524,11 @@ def _send_new_images_iteration():
 
 async def image_sender_job(context: ContextTypes.DEFAULT_TYPE):
     """Async wrapper that runs the synchronous image-sender in a thread."""
-    await asyncio.to_thread(_send_new_images_iteration)
+    if _SENDER_LOCK.locked():
+        logger.info("Skipping overlapping image_sender_job")
+        return
+    async with _SENDER_LOCK:
+        await asyncio.to_thread(_send_new_images_iteration)
 
 
 def main():

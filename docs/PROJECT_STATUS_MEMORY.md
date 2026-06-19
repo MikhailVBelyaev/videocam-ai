@@ -4,6 +4,40 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-005 documentation for "Fix production Telegram image delivery and admin statistics"
+  is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` with image
+  sender safeguards (concurrency guard, per-iteration send cap, cooldown bypass),
+  `/admin` latest image file send behavior, new env vars, expanded troubleshooting,
+  and updated validation counts. Verified `README.md` consistency. Updated project
+  status docs. All 146 tests pass. `py_compile` clean.
+- TASK-004 QA validation for "Fix production Telegram image delivery and admin statistics"
+  is complete and in `review_required`. Added 13 focused QA tests in `tests/test_tg_bot.py`
+  (53 → 66 tg_bot tests). Tests cover: sender lock-free positive case, cooldown-blocking
+  negative case, sub-cap positive case, send_photo timestamp update on success and no-update
+  on failure, `_get_latest_image_path` edge cases (no folders, empty folder, mtime ordering,
+  non-image filtering, OSError), `_get_latest_run_date` OSError, and `_summarize_live_output`
+  no-media and OSError. All 146 total tests pass. `py_compile` clean. No source code changes
+  required.
+- TASK-003 implementation for "Fix production Telegram image delivery and admin statistics"
+  is complete and in `review_required`. Modified `tg_bot/bot.py` to add concurrency guard
+  (`asyncio.Lock`), per-iteration send cap (`MAX_IMAGES_PER_ITERATION`, default 5),
+  time-based duplicate bypass cooldown (`SEND_COOLDOWN_SECONDS`, default 300), and
+  `/admin` latest image file send with graceful fallback. Added 6 focused tests in
+  `tests/test_tg_bot.py` covering guard skip, cap enforcement, cooldown bypass, and
+  `/admin` photo behaviors. Updated `README.md` with new env vars and sender safeguard
+  descriptions. All 53 tg_bot tests pass; all 52 snapshot triage tests pass; all 28
+  web_viewer tests pass. Total 133 tests pass. `py_compile` clean.
+- TASK-002 design for "Fix production Telegram image delivery and admin statistics"
+  is complete and in `review_required`. Created `docs/TELEGRAM_IMAGE_DELIVERY_DESIGN.md`
+  defining affected services (`tg_bot/bot.py` primary), module-level changes
+  (concurrency guard, send cap, cooldown bypass, `/admin` latest image send),
+  data flow diagrams, interfaces, implementation approach, tradeoffs, risks,
+  and validation plan. All 127 tests pass; no source code changes.
+- TASK-001 scope for "Fix production Telegram image delivery and admin statistics"
+  is complete and in `review_required`. Created `docs/TELEGRAM_IMAGE_DELIVERY_SCOPE.md`
+  defining minimum deliverable (concurrency guard, per-iteration send cap, time-based
+  duplicate bypass, `/admin` latest image send), measurable acceptance criteria, and
+  explicit exclusions. All 127 tests pass; no source code changes.
 - TASK-005 documentation for "Change /admin: add web server page with cars and"
   is complete and in `review_required`. Created `docs/WEB_VIEWER_RUNBOOK.md`
   covering `/admin` behavior, static file serving, configuration, operating

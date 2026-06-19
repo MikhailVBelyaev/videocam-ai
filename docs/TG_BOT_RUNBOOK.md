@@ -9,29 +9,75 @@ to admin commands.
 
 Configure these in `tg_bot/.env`:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `TELEGRAM_TOKEN` | Yes | Bot token from BotFather |
-| `TELEGRAM_CHAT_ID` | Yes | Default chat ID for image posts |
-| `TELEGRAM_ADMIN_CHAT_ID` | No | Chat ID authorized for `/admin` and `/state` (falls back to `TELEGRAM_CHAT_ID`) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TELEGRAM_TOKEN` | Yes | — | Bot token from BotFather |
+| `TELEGRAM_CHAT_ID` | Yes | — | Default chat ID for image posts |
+| `TELEGRAM_ADMIN_CHAT_ID` | No | `TELEGRAM_CHAT_ID` | Chat ID authorized for `/admin` and `/state` |
+| `MAX_IMAGES_PER_ITERATION` | No | `5` | Maximum images sent in one 5-second sender tick |
+| `SEND_COOLDOWN_SECONDS` | No | `300` | Seconds after which the duplicate filter is bypassed for the next candidate |
+
+## Image Sender Safeguards
+
+The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_ID`.
+The sender includes three production safeguards:
+
+### 1. Concurrency Guard
+
+`image_sender_job` is scheduled every 5 seconds. If a previous iteration is still
+running (e.g., slow network or large backlog), the new invocation is skipped
+instead of overlapping.
+
+- Implementation: `asyncio.Lock` acquired at the async boundary
+- Behavior: locked → log "Skipping overlapping image_sender_job" and return
+- Resume: the next 5-second tick continues from the last unsent image
+
+### 2. Per-Iteration Send Cap
+
+At most `MAX_IMAGES_PER_ITERATION` images are sent in a single tick. Remaining
+images resume on the next tick.
+
+- Default: 5 images per 5-second tick
+- Boundary: the cap is enforced inside `_send_new_images_iteration()` after each
+  successful `send_photo()`
+- Resume: `LAST_SENT_IMAGE` is updated per successful send, so the next tick
+  naturally continues from the next unsent image
+
+### 3. Cooldown Bypass
+
+If no image has been sent for `SEND_COOLDOWN_SECONDS`, the next candidate image
+is delivered even if it is perceptually similar to the last sent image.
+
+- Default: 300 seconds (5 minutes)
+- Scope: bypass applies to **one candidate only**. After that send, the timestamp
+  updates and normal similarity filtering resumes for the remainder of the iteration.
+- Purpose: prevents the bot from going silent when the scene is static
 
 ## Commands
 
 ### `/admin`
 
-Returns a single-page Markdown summary to authorized chats only.
+Returns a single-page Markdown summary **and sends the latest image file** to
+authorized chats only.
 
 Data sources (tried in order):
 1. `output/triage_summary.json` — latest triage statistics
 2. Live `output/YYYY-MM-DD/` folder — media counts when no triage summary exists
 
-Output includes:
+Text output includes:
 - Latest run date and freshness indicator (within 24h = fresh)
 - Total and kept image counts
 - Car and person counts (when object detection is enabled)
 - Video file count (live output only)
 - Latest file name and timestamp (live output only)
 - Missing expected object count (if any)
+
+Image output:
+- After the text reply, the bot sends the most recently modified image file
+  from the latest `output/YYYY-MM-DD/` folder via `reply_photo`.
+- If no image files exist, the bot replies with "No latest image available."
+- If `reply_photo` raises an exception, the bot catches it and falls back to the
+  same text note.
 
 Non-admin chats are silently ignored.
 
@@ -141,8 +187,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 47 tg_bot tests pass
+- 66 tg_bot tests pass
 - 52 snapshot triage tests pass
+- 28 web_viewer tests pass
+- 146 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
@@ -154,3 +202,6 @@ Expected results:
 | Bot does not respond to `/admin` or `/state` | Chat ID is not the configured admin chat | Check `TELEGRAM_ADMIN_CHAT_ID` (falls back to `TELEGRAM_CHAT_ID`) |
 | Images are not posted | `output/` directory missing or empty | Ensure `output/` exists and contains dated `YYYY-MM-DD` folders with images |
 | Duplicate images sent repeatedly | `.last_sent_file` state out of sync | Delete `output/.last_sent_file` and restart the bot |
+| Bot goes silent during static scenes | Cooldown bypass has not yet expired | This is expected behavior; the next image is sent after `SEND_COOLDOWN_SECONDS` even if similar |
+| Sender warnings about "maximum running instances reached" | Overlapping sender iterations (pre-guard behavior) | Ensure you are running the version with `_SENDER_LOCK`; restart the bot if the lock appears stuck |
+| `/admin` sends text but no photo | Latest dated folder contains no images, or photo exceeds Telegram limits | Verify `output/YYYY-MM-DD/` contains `.jpg`/`.jpeg`/`.png` files; check logs for send errors |

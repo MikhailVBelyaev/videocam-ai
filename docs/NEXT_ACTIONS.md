@@ -4,10 +4,100 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-005 documentation for "Change /admin: add web server page with cars and"
-is complete and in `review_required`.
+TASK-005 documentation for "Fix production Telegram image delivery and admin statistics"
+is complete and in `review_required`. `docs/TG_BOT_RUNBOOK.md` updated with sender
+safeguards, `/admin` photo behavior, new env vars, and troubleshooting. All 146 tests pass.
 
-Multiple prior increments remain in `review_required`.
+## Completed Review Items (TASK-005 Telegram Docs)
+
+- Verified `README.md` Telegram bot section against `tg_bot/bot.py` implementation.
+- Updated `docs/TG_BOT_RUNBOOK.md`:
+  - Added "Image Sender Safeguards" section covering concurrency guard (`asyncio.Lock`),
+    per-iteration send cap (`MAX_IMAGES_PER_ITERATION`, default 5), and cooldown bypass
+    (`SEND_COOLDOWN_SECONDS`, default 300).
+  - Updated `/admin` command description to include latest image file send behavior
+    and graceful fallback on missing image or send failure.
+  - Added `MAX_IMAGES_PER_ITERATION` and `SEND_COOLDOWN_SECONDS` to environment
+    variables table.
+  - Expanded troubleshooting table with entries for static-scene silence,
+    overlapping sender warnings, and missing `/admin` photo.
+  - Updated validation counts: 66 tg_bot tests, 146 total tests.
+- Updated project status docs (`PROJECT_STATUS_MEMORY.md`, `NEXT_ACTIONS.md`,
+  `PROJECT_MANAGER.yaml`, `DEVELOPMENT_LOG.md`).
+- All 146 tests pass. `py_compile` clean.
+- Decide whether to accept, revise, or extend.
+
+## Completed Review Items (TASK-004 Telegram QA)
+
+- QA validated the TASK-003 implementation in `tg_bot/bot.py`.
+- Added 13 focused QA tests in `tests/test_tg_bot.py` (53 → 66 tg_bot tests):
+  - `TgBotSenderTests`: sender job runs when lock is free, iteration skips similar images
+    within cooldown, iteration sends all when under cap.
+  - `TgBotSenderPhotoQATests`: send_photo updates `_LAST_SENT_TIMESTAMP` on success;
+    send_photo does not update timestamp on failure.
+  - `TgBotLatestImageQATests`: `_get_latest_image_path` returns None for no dated folders,
+    empty folder, OSError; picks most recently modified image; ignores non-image files.
+  - `TgBotAdminTests`: `_get_latest_run_date` OSError returns None; `_summarize_live_output`
+    returns None for no-media and OSError.
+- All 146 tests pass (66 tg_bot + 52 snapshot_triage + 28 web_viewer).
+- `py_compile` clean on `tg_bot/bot.py` and `tests/test_tg_bot.py`.
+- No source code changes required.
+- Decide whether to accept, revise, or extend.
+
+## Prior Review Items (TASK-003 Telegram image delivery implementation)
+
+- Review `tg_bot/bot.py` diff for the Telegram image delivery fix.
+  - Verify `_SENDER_LOCK` prevents overlapping `image_sender_job` executions.
+  - Verify `MAX_IMAGES_PER_ITERATION` (default 5) caps sends per iteration.
+  - Verify `SEND_COOLDOWN_SECONDS` (default 300) bypasses perceptual-hash duplicate
+    filter when expired.
+  - Verify `send_photo()` updates `_LAST_SENT_TIMESTAMP` on success.
+  - Verify `_get_latest_image_path()` returns the most recent image in the latest
+    dated folder, or None when no images exist.
+  - Verify `admin_command()` sends the text summary first, then attempts `reply_photo`
+    with the latest image, and falls back to text on failure or absence.
+  - Verify non-admin chats are still silently ignored.
+  - Verify existing `/state` behavior is unchanged (no regression).
+  - Decide whether to accept, revise, or reject the implementation.
+
+- Review `tests/test_tg_bot.py` diff for 6 new focused tests.
+  - Verify `TgBotSenderTests` covers lock skip, send cap, and cooldown bypass.
+  - Verify `TgBotAdminPhotoTests` covers image send, no-image fallback, and send-failure fallback.
+  - Decide whether to accept, revise, or reject the test coverage.
+
+- Review `README.md` diff for updated Telegram bot documentation.
+  - Verify new env vars (`MAX_IMAGES_PER_ITERATION`, `SEND_COOLDOWN_SECONDS`) are documented.
+  - Verify `/admin` photo behavior and sender safeguards are described accurately.
+  - Decide whether to accept, revise, or reject the documentation.
+
+## New Review Items (TASK-002 Telegram image delivery design)
+
+- Review `docs/TELEGRAM_IMAGE_DELIVERY_DESIGN.md`.
+  - Verify affected services, modules, data flows, and interfaces are accurate.
+  - Verify implementation approach covers: concurrency guard with `asyncio.Lock`,
+    per-iteration send cap, time-based duplicate bypass cooldown, and `/admin`
+    sending the latest image file.
+  - Verify key tradeoffs are documented with rationale (guard placement, cap
+    boundary, cooldown source, image send method, bypass scope).
+  - Verify risks and mitigations are adequate (overlap with pending `tg_bot`
+    changes, cooldown sending unwanted frames, cap delaying bursts, large file
+    limits, timestamp loss on restart).
+  - Verify no scope expansion into camera capture, triage pipeline, web viewer,
+    object detection, or container infrastructure.
+  - Decide whether to accept, revise, or reject the design.
+  - If accepted, prepare a TASK-003 implementation job.
+
+## New Review Items (TASK-001 Telegram image delivery scope)
+
+- Review `docs/TELEGRAM_IMAGE_DELIVERY_SCOPE.md`.
+  - Verify minimum deliverable covers: concurrency guard for `image_sender_job`,
+    per-iteration send cap (default 5), time-based duplicate bypass cooldown
+    (default 300s), and `/admin` sending the latest image file.
+  - Verify acceptance criteria are measurable and exclusions are explicit.
+  - Verify no scope expansion into camera capture, triage pipeline, web viewer,
+    or object detection model changes.
+  - Decide whether to accept, revise, or reject the scope.
+  - If accepted, prepare a TASK-002 design job.
 
 ## New Review Items (TASK-005 web admin page documentation)
 

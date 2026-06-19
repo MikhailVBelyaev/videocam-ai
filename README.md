@@ -114,14 +114,17 @@ Environment variables (set in `tg_bot/.env`):
 - `TELEGRAM_TOKEN` — bot token from BotFather
 - `TELEGRAM_CHAT_ID` — default chat ID for image posts
 - `TELEGRAM_ADMIN_CHAT_ID` — optional chat ID authorized for `/admin` (falls back to `TELEGRAM_CHAT_ID`)
+- `MAX_IMAGES_PER_ITERATION` — optional cap on images sent per 5-second tick (default: `5`)
+- `SEND_COOLDOWN_SECONDS` — optional cooldown after which the duplicate filter is bypassed (default: `300`)
 
 Commands:
 
-- `/admin` — returns a single-page summary from the latest `output/triage_summary.json`:
+- `/admin` — returns a single-page summary from the latest `output/triage_summary.json` **and sends the latest image file**:
   - latest run date and freshness indicator
   - total and kept image counts
   - car and person counts (when object detection is enabled)
   - missing expected object count (if any)
+  - photo message with the most recent image from `output/`
 
 - `/state` — returns a single-page container status summary (admin chat only):
   - status for `cams_grabber`, `tg_bot`, `sys_monitor`, `web_viewer`
@@ -153,6 +156,11 @@ docker compose up -d tg_bot
 ```
 
 The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_ID`.
+The sender includes three production safeguards:
+
+- **Concurrency guard** — overlapping sender iterations are skipped so only one pass runs at a time.
+- **Per-iteration cap** — at most `MAX_IMAGES_PER_ITERATION` images are sent in a single tick; remaining images resume on the next tick.
+- **Cooldown bypass** — if no image has been sent for `SEND_COOLDOWN_SECONDS`, the next candidate is delivered even if it is perceptually similar to the last sent image.
 
 Full operating details, tuning guidance, JSON schema, and limitations are in:
 
