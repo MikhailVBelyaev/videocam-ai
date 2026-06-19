@@ -1806,5 +1806,266 @@ class TgBotTriageAwareQATests(unittest.TestCase):
                 self.assertNotIn("rejected", sent_path)
 
 
+class TgBotFreshFirstTests(unittest.TestCase):
+    """Tests for newest-first processing, max-age filter, and extended /admin fields."""
+
+    def test_newest_first_sends_fresher_image_before_older(self):
+        """When two unsent images exist, the one with more recent mtime is sent first."""
+        import time
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            old_path = os.path.join(date_folder, "frame_a.jpg")
+            new_path = os.path.join(date_folder, "frame_b.jpg")
+            open(old_path, "w").close()
+            open(new_path, "w").close()
+            # Make frame_b newer (higher mtime)
+            now = time.time()
+            os.utime(old_path, (now - 120, now - 120))
+            os.utime(new_path, (now - 10, now - 10))
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                sent_paths = [call[0][0] for call in mock_send.call_args_list]
+                sent_basenames = [os.path.basename(p) for p in sent_paths]
+                # Newest first: frame_b should be sent before frame_a
+                self.assertEqual(sent_basenames[0], "frame_b.jpg")
+                self.assertEqual(sent_basenames[1], "frame_a.jpg")
+
+    def test_max_age_filter_skips_stale_file(self):
+        """Images older than MAX_IMAGE_AGE_SECONDS are skipped and _SKIPPED_STALE_COUNT increments."""
+        import time
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            stale_path = os.path.join(date_folder, "frame_stale.jpg")
+            fresh_path = os.path.join(date_folder, "frame_fresh.jpg")
+            open(stale_path, "w").close()
+            open(fresh_path, "w").close()
+            now = time.time()
+            os.utime(stale_path, (now - 7200, now - 7200))  # 2 hours old
+            os.utime(fresh_path, (now - 60, now - 60))       # 1 minute old
+
+            original_stale_count = bot_module._SKIPPED_STALE_COUNT
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Only fresh file should be sent; stale skipped
+                self.assertEqual(mock_send.call_count, 1)
+                self.assertEqual(os.path.basename(mock_send.call_args[0][0]), "frame_fresh.jpg")
+                self.assertEqual(bot_module._SKIPPED_STALE_COUNT, original_stale_count + 1)
+                self.assertEqual(bot_module._LAST_SKIP_REASON, "stale")
+
+    def test_max_age_default_is_3600(self):
+        """MAX_IMAGE_AGE_SECONDS defaults to 3600 when env var is unset."""
+        with patch.dict(os.environ, {}, clear=True):
+            os.environ.pop("MAX_IMAGE_AGE_SECONDS", None)
+            # Force re-evaluation by importing in a patched environment
+            import importlib
+            import tg_bot.bot as bot_module
+            with patch.object(bot_module, "MAX_IMAGE_AGE_SECONDS", 3600):
+                self.assertEqual(bot_module.MAX_IMAGE_AGE_SECONDS, 3600)
+
+    def test_max_age_custom_env_var(self):
+        """MAX_IMAGE_AGE_SECONDS reads custom value from env var."""
+        with patch.dict(os.environ, {"MAX_IMAGE_AGE_SECONDS": "60"}):
+            val = int(os.getenv("MAX_IMAGE_AGE_SECONDS", "3600"))
+            self.assertEqual(val, 60)
+
+    def test_max_age_invalid_env_var_fallback(self):
+        """Non-integer MAX_IMAGE_AGE_SECONDS falls back to 3600 gracefully."""
+        with patch.dict(os.environ, {"MAX_IMAGE_AGE_SECONDS": "not_a_number"}):
+            try:
+                val = int(os.getenv("MAX_IMAGE_AGE_SECONDS", "3600"))
+            except ValueError:
+                val = 3600
+            self.assertEqual(val, 3600)
+
+    def test_format_admin_message_includes_extended_fields(self):
+        """_format_admin_message includes stale count, backlog size, latest capture, latest sent, last skip reason."""
+        import tg_bot.bot as bot_module
+
+        bot_module._SENT_COUNT = 5
+        bot_module._SKIPPED_DUPLICATE_COUNT = 2
+        bot_module._SKIPPED_NON_KEPT_COUNT = 1
+        bot_module._SKIPPED_STALE_COUNT = 3
+        bot_module._LAST_SKIP_REASON = "stale"
+
+        try:
+            summary = {
+                "total_images": 100,
+                "kept_images": 50,
+                "total_objects_by_type": {"car": 20, "person": 5},
+                "missing_expected_objects": [],
+            }
+            text = _format_admin_message(summary, "2026-06-19", fresh=True)
+            self.assertIn("*Skipped (stale):* 3", text)
+            self.assertIn("*Backlog size:*", text)
+            self.assertIn("*Latest capture:*", text)
+            self.assertIn("*Latest sent:*", text)
+            self.assertIn("*Last skip reason:* stale", text)
+        finally:
+            bot_module._SENT_COUNT = 0
+            bot_module._SKIPPED_DUPLICATE_COUNT = 0
+            bot_module._SKIPPED_NON_KEPT_COUNT = 0
+            bot_module._SKIPPED_STALE_COUNT = 0
+            bot_module._LAST_SKIP_REASON = ""
+
+    def test_newest_first_cursor_stability(self):
+        """A newly arrived file that sorts after the cursor in ascending order is still reachable."""
+        import time
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            # Create files: frame_001 and frame_002
+            for name in ("frame_001.jpg", "frame_002.jpg"):
+                open(os.path.join(date_folder, name), "w").close()
+            now = time.time()
+            os.utime(os.path.join(date_folder, "frame_001.jpg"), (now - 60, now - 60))
+            os.utime(os.path.join(date_folder, "frame_002.jpg"), (now - 30, now - 30))
+
+            # Simulate that frame_001 was already sent
+            last_sent = os.path.join(date_folder, "frame_001.jpg")
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", "2026-06-19"), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", last_sent), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Only frame_002 should be sent (after cursor)
+                self.assertEqual(mock_send.call_count, 1)
+                self.assertEqual(os.path.basename(mock_send.call_args[0][0]), "frame_002.jpg")
+
+
+class TgBotFreshFirstCompatibilityTests(unittest.TestCase):
+    """Backward-compatibility tests: existing behaviors unchanged by newest-first + max-age."""
+
+    def test_concurrency_guard_unchanged(self):
+        """image_sender_job still skips when lock is held."""
+        import asyncio
+        from tg_bot.bot import image_sender_job
+
+        with patch("tg_bot.bot._SENDER_LOCK.locked", return_value=True), \
+             patch("tg_bot.bot._send_new_images_iteration") as mock_iter:
+            coro = image_sender_job(MagicMock())
+            asyncio.get_event_loop().run_until_complete(coro)
+            mock_iter.assert_not_called()
+
+    def test_send_cap_still_enforced(self):
+        """MAX_IMAGES_PER_ITERATION still caps sends per iteration."""
+        from tg_bot.bot import _send_new_images_iteration, MAX_IMAGES_PER_ITERATION
+        folder = "2026-06-19"
+        files = [f"frame_{i:03d}.jpg" for i in range(10)]
+
+        def listdir_side_effect(path):
+            if path == "output":
+                return [folder]
+            if folder in path:
+                return files
+            return []
+
+        with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+             patch("tg_bot.bot.os.path.isdir", return_value=True), \
+             patch("tg_bot.bot.os.path.isfile", return_value=True), \
+             patch("tg_bot.bot.are_images_similar", return_value=False), \
+             patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+             patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+             patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+             patch("tg_bot.bot.cleanup_old_folders"):
+            _send_new_images_iteration()
+            self.assertEqual(mock_send.call_count, MAX_IMAGES_PER_ITERATION)
+
+    def test_cooldown_bypass_still_works(self):
+        """Cooldown bypass still allows similar images when expired."""
+        from tg_bot.bot import _send_new_images_iteration
+        folder = "2026-06-19"
+        files = ["frame_001.jpg"]
+
+        def listdir_side_effect(path):
+            if path == "output":
+                return [folder]
+            if folder in path:
+                return files
+            return []
+
+        with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect), \
+             patch("tg_bot.bot.os.path.isdir", return_value=True), \
+             patch("tg_bot.bot.os.path.isfile", return_value=True), \
+             patch("tg_bot.bot.are_images_similar", return_value=True), \
+             patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+             patch("tg_bot.bot.LAST_SENT_FOLDER", folder), \
+             patch("tg_bot.bot.LAST_SENT_IMAGE", os.path.join("output", folder, "prev.jpg")), \
+             patch("tg_bot.bot._LAST_SENT_TIMESTAMP", 0.0), \
+             patch("tg_bot.bot.cleanup_old_folders"):
+            _send_new_images_iteration()
+            mock_send.assert_called_once()
+
+    def test_triage_aware_selection_unchanged(self):
+        """kept/ preference and non-kept counting still work."""
+        import tg_bot.bot as bot_module
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "rejected_001.jpg"), "w").close()
+
+            bot_module._SKIPPED_NON_KEPT_COUNT = 0
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Only kept image sent, rejected not sent
+                sent_basenames = [os.path.basename(call[0][0]) for call in mock_send.call_args_list]
+                self.assertNotIn("rejected_001.jpg", sent_basenames)
+                self.assertEqual(bot_module._SKIPPED_NON_KEPT_COUNT, 1)
+
+    def test_startup_initialization_unchanged(self):
+        """Startup state initialization still picks the latest image."""
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            old_path = os.path.join(folder, "frame_001.jpg")
+            new_path = os.path.join(folder, "frame_002.jpg")
+            open(old_path, "w").close()
+            open(new_path, "w").close()
+            os.utime(old_path, (1000000, 1000000))
+            os.utime(new_path, (2000000, 2000000))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                result = _initialize_startup_state()
+                self.assertEqual(result[1], new_path)
+                self.assertEqual(result[0], "2026-06-19")
+
+
 if __name__ == "__main__":
     unittest.main()

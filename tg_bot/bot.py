@@ -55,11 +55,17 @@ VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
 MAX_IMAGES_PER_ITERATION = int(os.getenv("MAX_IMAGES_PER_ITERATION", "5"))
 SEND_COOLDOWN_SECONDS = int(os.getenv("SEND_COOLDOWN_SECONDS", "300"))
 IMAGE_SIMILARITY_THRESHOLD = int(os.getenv("IMAGE_SIMILARITY_THRESHOLD", "10"))
+try:
+    MAX_IMAGE_AGE_SECONDS = int(os.getenv("MAX_IMAGE_AGE_SECONDS", "3600"))
+except ValueError:
+    MAX_IMAGE_AGE_SECONDS = 3600
 _SENDER_LOCK = asyncio.Lock()
 _LAST_SENT_TIMESTAMP = 0.0
 _SENT_COUNT = 0
 _SKIPPED_DUPLICATE_COUNT = 0
 _SKIPPED_NON_KEPT_COUNT = 0
+_SKIPPED_STALE_COUNT = 0
+_LAST_SKIP_REASON = ""
 
 
 def cleanup_old_folders():
@@ -332,6 +338,57 @@ def _format_admin_message(summary: dict, run_date: str | None, fresh: bool) -> s
         f"*Sent:* {_SENT_COUNT}",
         f"*Skipped (similar):* {_SKIPPED_DUPLICATE_COUNT}",
         f"*Skipped (non-kept):* {_SKIPPED_NON_KEPT_COUNT}",
+        f"*Skipped (stale):* {_SKIPPED_STALE_COUNT}",
+    ])
+
+    # Backlog size: unsent images after the cursor in the current folder
+    backlog_size = 0
+    if run_date:
+        try:
+            folder_path = os.path.join(OUTPUT_DIR, run_date)
+            image_files = _get_image_list(folder_path)
+            start_index = 0
+            if LAST_SENT_IMAGE is not None and LAST_SENT_FOLDER == run_date:
+                last_sent_filename = os.path.basename(LAST_SENT_IMAGE)
+                try:
+                    start_index = image_files.index(last_sent_filename) + 1
+                except ValueError:
+                    start_index = 0
+            backlog_size = len(image_files) - start_index
+        except Exception:
+            backlog_size = 0
+
+    # Latest capture time from the most recent image in the latest dated folder
+    latest_capture_path = _get_latest_image_path()
+    latest_capture_str = "Unknown"
+    if latest_capture_path:
+        try:
+            latest_capture_dt = datetime.fromtimestamp(
+                os.path.getmtime(latest_capture_path),
+                pytz.timezone("Asia/Tashkent"),
+            ).isoformat(timespec="seconds")
+            latest_capture_str = latest_capture_dt
+        except Exception:
+            latest_capture_str = "Unknown"
+
+    # Latest sent time
+    latest_sent_str = "Never"
+    if _LAST_SENT_TIMESTAMP:
+        try:
+            latest_sent_dt = datetime.fromtimestamp(
+                _LAST_SENT_TIMESTAMP,
+                pytz.timezone("Asia/Tashkent"),
+            ).isoformat(timespec="seconds")
+            latest_sent_str = latest_sent_dt
+        except Exception:
+            latest_sent_str = "Unknown"
+
+    lines.extend([
+        "",
+        f"*Backlog size:* {backlog_size}",
+        f"*Latest capture:* {latest_capture_str}",
+        f"*Latest sent:* {latest_sent_str}",
+        f"*Last skip reason:* {_LAST_SKIP_REASON or '—'}",
     ])
     return "\n".join(lines)
 
@@ -525,7 +582,7 @@ def _get_image_list(folder_path: str) -> list[str]:
 
 def _send_new_images_iteration():
     """One pass of the image-sending loop. Prefers kept/ images when available."""
-    global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _SKIPPED_DUPLICATE_COUNT, _SKIPPED_NON_KEPT_COUNT
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _SKIPPED_DUPLICATE_COUNT, _SKIPPED_NON_KEPT_COUNT, _SKIPPED_STALE_COUNT, _LAST_SKIP_REASON
     try:
         # List subfolders in OUTPUT_DIR with valid date names
         subfolders = []
@@ -567,6 +624,7 @@ def _send_new_images_iteration():
                 for f in all_files:
                     if f not in kept_set:
                         _SKIPPED_NON_KEPT_COUNT += 1
+                        _LAST_SKIP_REASON = "non-kept"
             except OSError:
                 pass
 
@@ -584,10 +642,30 @@ def _send_new_images_iteration():
             except ValueError:
                 start_index = 0
 
+        remaining = image_files[start_index:]
+        # Newest-first: sort remaining unsent images by mtime descending
+        def _mtime_key(f):
+            try:
+                return os.path.getmtime(os.path.join(image_base_path, f))
+            except OSError:
+                return 0.0
+        remaining.sort(key=_mtime_key, reverse=True)
+
+        now = time.time()
         sent_count = 0
-        for filename in image_files[start_index:]:
+        for filename in remaining:
             path = os.path.join(image_base_path, filename)
             if os.path.isfile(path):
+                # Max-age staleness filter
+                try:
+                    file_mtime = os.path.getmtime(path)
+                except OSError:
+                    file_mtime = None
+                if file_mtime is not None and file_mtime < now - MAX_IMAGE_AGE_SECONDS:
+                    logger.info(f"Skipped {filename} (older than {MAX_IMAGE_AGE_SECONDS}s)")
+                    _SKIPPED_STALE_COUNT += 1
+                    _LAST_SKIP_REASON = "stale"
+                    continue
                 if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path, threshold=IMAGE_SIMILARITY_THRESHOLD):
                     cooldown_expired = (time.time() - _LAST_SENT_TIMESTAMP) > SEND_COOLDOWN_SECONDS
                     if cooldown_expired:
@@ -595,6 +673,7 @@ def _send_new_images_iteration():
                     else:
                         logger.info(f"Skipped {filename} (too similar to last sent image)")
                         _SKIPPED_DUPLICATE_COUNT += 1
+                        _LAST_SKIP_REASON = "similar"
                         continue
                 if send_photo(path):
                     sent_count += 1

@@ -117,6 +117,7 @@ Environment variables (set in `tg_bot/.env`):
 - `MAX_IMAGES_PER_ITERATION` — optional cap on images sent per 5-second tick (default: `5`)
 - `SEND_COOLDOWN_SECONDS` — optional cooldown after which the duplicate filter is bypassed (default: `300`)
 - `IMAGE_SIMILARITY_THRESHOLD` — optional perceptual hash distance threshold for skipping similar images (default: `10`)
+- `MAX_IMAGE_AGE_SECONDS` — optional maximum age in seconds for an image to be considered fresh enough to send (default: `3600`)
 
 Commands:
 
@@ -166,10 +167,12 @@ The sender includes three production safeguards:
 - **Per-iteration cap** — at most `MAX_IMAGES_PER_ITERATION` images are sent in a single tick; remaining images resume on the next tick.
 - **Cooldown bypass** — if no image has been sent for `SEND_COOLDOWN_SECONDS`, the next candidate is delivered even if it is perceptually similar to the last sent image.
 
+Within the remaining unsent window, fresher frames are sent before older backlog frames (newest-first by file modification time). Images whose modification time is older than `MAX_IMAGE_AGE_SECONDS` are skipped as stale.
+
 When a `kept/` triage subfolder exists, only those images are sent; others are
 skipped as non-kept. Images whose perceptual hash distance from the last sent
 image is ≤ `IMAGE_SIMILARITY_THRESHOLD` are also skipped as similar duplicates.
-The `/admin` command reports send statistics (sent, skipped similar, skipped non-kept).
+The `/admin` command reports send statistics (sent, skipped similar, skipped non-kept, skipped stale), backlog size, latest capture time, latest sent time, and last skip reason.
 
 Full operating details, tuning guidance, JSON schema, and limitations are in:
 

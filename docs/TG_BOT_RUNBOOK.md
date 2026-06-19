@@ -17,6 +17,7 @@ Configure these in `tg_bot/.env`:
 | `MAX_IMAGES_PER_ITERATION` | No | `5` | Maximum images sent in one 5-second sender tick |
 | `SEND_COOLDOWN_SECONDS` | No | `300` | Seconds after which the duplicate filter is bypassed for the next candidate |
 | `IMAGE_SIMILARITY_THRESHOLD` | No | `10` | Perceptual hash distance threshold; images within this distance of the last sent image are skipped as duplicates |
+| `MAX_IMAGE_AGE_SECONDS` | No | `3600` | Maximum age in seconds for an image to be considered fresh enough to send; older images are skipped as stale |
 
 ## Image Sender Safeguards
 
@@ -69,10 +70,28 @@ The bot uses these triage results to decide which images to send:
   the last sent image is ≤ `IMAGE_SIMILARITY_THRESHOLD` are skipped and
   counted as **similar duplicates**. Default threshold is 10; raise it to
   allow more visual variation through, lower it to be stricter.
-- **Send statistics** — the `/admin` command appends a line showing:
-  `Sent: N | Skipped (similar): N | Skipped (non-kept): N`
+| **Send statistics** — the `/admin` command appends lines showing:
+  `Sent: N`, `Skipped (similar): N`, `Skipped (non-kept): N`, `Skipped (stale): N`,
+  `Backlog size: N`, `Latest capture: <timestamp>`, `Latest sent: <timestamp>`,
+  `Last skip reason: <reason>`.
 
 These counts reset on each bot process restart.
+
+## Newest-First Processing
+
+Within the remaining unsent window, the sender re-sorts images by file
+modification time (`mtime`) descending before iterating. This means fresher
+frames are sent before older backlog frames within the same tick, while the
+`LAST_SENT_IMAGE` cursor remains stable because `start_index` is still computed
+from the full ascending-sorted list.
+
+## Max-Age Staleness Filter
+
+Individual images whose `mtime` is older than `MAX_IMAGE_AGE_SECONDS`
+(default 3600 seconds = 1 hour) are skipped as stale. The filter is evaluated
+after the newest-first sort, so the freshest candidates are checked first.
+Skipped stale images increment `_SKIPPED_STALE_COUNT` and set the last skip
+reason to `"stale"`.
 
 ## Startup Behavior
 
@@ -103,6 +122,10 @@ Text output includes:
 - Video file count (live output only)
 - Latest file name and timestamp (live output only)
 - Missing expected object count (if any)
+- Send statistics: sent, skipped similar, skipped non-kept, skipped stale
+- Backlog size (unsent images after the cursor)
+- Latest capture time and latest sent time
+- Last skip reason (similar, non-kept, stale, or —)
 
 Image output:
 - After the text reply, the bot sends the most recently modified image file
@@ -219,10 +242,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 103 tg_bot tests pass
+- 115 tg_bot tests pass
 - 52 snapshot triage tests pass
 - 28 web_viewer tests pass
-- 183 total tests pass
+- 195 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
@@ -241,3 +264,6 @@ Expected results:
 | Too many similar images sent | `IMAGE_SIMILARITY_THRESHOLD` is set too high | Lower `IMAGE_SIMILARITY_THRESHOLD` (default 10); values below 5 will aggressively filter even real changes |
 | All images skipped as similar | `IMAGE_SIMILARITY_THRESHOLD` is set too low | Raise `IMAGE_SIMILARITY_THRESHOLD`; values above 15 allow most visual variation through |
 | Non-kept images not appearing in `/admin` stats | No `kept/` subfolder exists in the dated output folder | When no `kept/` subfolder exists, `_SKIPPED_NON_KEPT_COUNT` stays zero (backward-compatible fallback to all images) |
+| Bot sends old backlog before fresh frames | Expected behavior prior to newest-first sort | Current version re-sorts remaining unsent images by `mtime` descending; verify `MAX_IMAGE_AGE_SECONDS` is not set too low |
+| All unsent images skipped as stale | `MAX_IMAGE_AGE_SECONDS` is set too low, or system clock is skewed | Raise `MAX_IMAGE_AGE_SECONDS` (default 3600); verify file modification times are reasonable |
+| Stale images still sent | `MAX_IMAGE_AGE_SECONDS` is set too high | Lower `MAX_IMAGE_AGE_SECONDS` to match expected camera interval and acceptable lag |

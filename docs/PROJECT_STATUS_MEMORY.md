@@ -4,13 +4,19 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
-- TASK-002 design for "Ignore old Telegram image backlog and process fresh live"
-  is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_DESIGN.md`
-  listing affected services (`tg_bot/bot.py` primary), modules, data flows, and
-  interfaces; documenting implementation approach (newest-first sub-list sort,
-  max-age staleness filter, extended `/admin` counters/timestamps); and documenting
-  five key tradeoffs with rationale. No source code changes; all 103 tg_bot tests
-  pass; all 52 snapshot_triage tests pass; `py_compile` clean.
+- TASK-003 implementation for "Ignore old Telegram image backlog and process fresh live"
+  is complete and in `review_required`. Modified `tg_bot/bot.py` to add
+  `MAX_IMAGE_AGE_SECONDS` env var (default 3600, graceful fallback on invalid),
+  newest-first sub-list sort by `mtime` descending after stable `start_index`
+  computation, per-image max-age staleness filter, `_SKIPPED_STALE_COUNT` and
+  `_LAST_SKIP_REASON` counters, and extended `/admin` fields (backlog size,
+  latest capture time, latest sent time, last skip reason). Added 12 focused
+  tests in `tests/test_tg_bot.py` (`TgBotFreshFirstTests` 7 tests,
+  `TgBotFreshFirstCompatibilityTests` 5 tests). Updated `README.md` and
+  `docs/TG_BOT_RUNBOOK.md` with env var, newest-first behavior, max-age filter,
+  and new `/admin` fields. Updated project status docs. All 115 tg_bot tests
+  pass; all 52 snapshot_triage tests pass; all 28 web_viewer tests pass.
+  Total 195 tests pass. `py_compile` clean.
 
 ## Prior Update
 

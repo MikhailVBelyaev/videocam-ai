@@ -1,5 +1,35 @@
 # Development Log
 
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "Ignore old Telegram image backlog and process fresh live"
+  (Job ID: 2026-06-19_172411_videocam-ai-ignore-old-telegram-image-backlog-and-process-fr-task-003).
+  - Modified `tg_bot/bot.py`:
+    - Added `MAX_IMAGE_AGE_SECONDS` env var (default 3600) with graceful fallback on invalid value.
+    - Added `_SKIPPED_STALE_COUNT` and `_LAST_SKIP_REASON` module-level in-memory counters.
+    - Modified `_send_new_images_iteration()` to sort remaining unsent images by `mtime`
+      descending after computing stable `start_index` from the ascending-sorted list.
+    - Added per-image max-age staleness filter before the similarity check; skipped stale
+      images increment `_SKIPPED_STALE_COUNT` and set `_LAST_SKIP_REASON = "stale"`.
+    - Set `_LAST_SKIP_REASON` for "similar" and "non-kept" skip paths as well.
+    - Extended `_format_admin_message()` to append `Skipped (stale)`, `Backlog size`,
+      `Latest capture`, `Latest sent`, and `Last skip reason` fields.
+  - Added 12 focused tests in `tests/test_tg_bot.py` (2 new test classes):
+    - `TgBotFreshFirstTests` (7 tests): newest-first ordering, max-age filter skip,
+      default/custom/invalid env var, `/admin` extended fields, cursor stability.
+    - `TgBotFreshFirstCompatibilityTests` (5 tests): concurrency guard, send cap,
+      cooldown bypass, triage-aware selection, startup initialization unchanged.
+  - Updated `README.md` with `MAX_IMAGE_AGE_SECONDS` env var, newest-first behavior,
+    and new `/admin` fields.
+  - Updated `docs/TG_BOT_RUNBOOK.md` with `MAX_IMAGE_AGE_SECONDS` env var,
+    "Newest-First Processing" and "Max-Age Staleness Filter" sections, updated `/admin`
+    description, validation counts (115 tg_bot tests, 195 total), and max-age troubleshooting entries.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/PROJECT_MANAGER.yaml`, and `docs/DEVELOPMENT_LOG.md`.
+  - All 115 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 195 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Design)
 
 - Completed TASK-002 design for "Ignore old Telegram image backlog and process fresh live"
