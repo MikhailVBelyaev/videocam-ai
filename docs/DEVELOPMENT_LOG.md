@@ -1,5 +1,18 @@
 # Development Log
 
+## 2026-06-19 (Docs)
+
+- Completed TASK-005 documentation for "Fix remaining Telegram image backlog problem"
+  (Job ID: 2026-06-19_151143_videocam-ai-fix-remaining-telegram-image-backlog-problem-task-005).
+  - Updated `docs/TG_BOT_RUNBOOK.md` validation counts: 76 tg_bot tests, 156 total tests.
+  - Verified `README.md` Telegram bot section consistency with `tg_bot/bot.py` startup
+    behavior, env vars, and sender safeguards.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml`.
+  - All 76 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 156 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (QA)
 
 - Completed TASK-004 QA validation for "Fix remaining Telegram image backlog problem"

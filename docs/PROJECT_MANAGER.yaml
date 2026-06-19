@@ -5,8 +5,16 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: 'TASK-004 QA validation for "Fix remaining Telegram image backlog problem" complete; awaiting human review. Added 6 focused QA tests in tests/test_tg_bot.py (TgBotStartupStateQATests) covering multiple-dated-folder selection, module global mutation, _LAST_SENT_TIMESTAMP preservation, OSError error propagation, state file format correctness, and iteration start-index after initialization. No source code changes required. All 156 tests pass. py_compile clean.'
+current_goal: 'TASK-005 documentation for "Fix remaining Telegram image backlog problem" complete; awaiting human review. Updated docs/TG_BOT_RUNBOOK.md validation counts to 76 tg_bot tests / 156 total tests. Verified README.md consistency. Updated docs/PROJECT_STATUS_MEMORY.md, docs/NEXT_ACTIONS.md, docs/DEVELOPMENT_LOG.md, and docs/PROJECT_MANAGER.yaml. All 156 tests pass. py_compile clean.'
 next_actions:
+- "Review the TASK-005 documentation diff for docs/TG_BOT_RUNBOOK.md, README.md,"
+- "  docs/PROJECT_STATUS_MEMORY.md, docs/NEXT_ACTIONS.md, docs/DEVELOPMENT_LOG.md,"
+- "  and docs/PROJECT_MANAGER.yaml."
+- "  - Verify validation counts are accurate (76 tg_bot tests, 156 total)."
+- "  - Verify startup behavior section, troubleshooting table, and command descriptions"
+- "    remain accurate against tg_bot/bot.py."
+- "  - Verify README.md Telegram bot section is consistent with implementation."
+- "  - Decide whether to accept, revise, or reject the documentation."
 - "Review the TASK-003 implementation diff for tg_bot/bot.py, tests/test_tg_bot.py, README.md, and docs/TG_BOT_RUNBOOK.md."
 - "  - Verify _initialize_startup_state() scans the latest dated folder and sets"
 - "    LAST_SENT_IMAGE/LAST_SENT_FOLDER to the most recently modified image."
@@ -135,8 +143,11 @@ next_actions:
 - Review the TASK-002 design doc `docs/TASK002_IMPROVE_IMAGE_QUALITY_STATISTICS_DESIGN.md`.
 - Continue reviewing TASK-004/005 increments as needed.
 next_tasks:
-- Review the TASK-003 implementation diff for `tg_bot/bot.py`, `tests/test_tg_bot.py`,
-  `README.md`, and `docs/TG_BOT_RUNBOOK.md` for the Telegram backlog fix.
+- "Review the TASK-005 documentation diff for docs/TG_BOT_RUNBOOK.md, README.md,"
+- "  docs/PROJECT_STATUS_MEMORY.md, docs/NEXT_ACTIONS.md, docs/DEVELOPMENT_LOG.md,"
+- "  and docs/PROJECT_MANAGER.yaml for the Telegram backlog fix."
+- "Review the TASK-003 implementation diff for `tg_bot/bot.py`, `tests/test_tg_bot.py`,"
+- "  `README.md`, and `docs/TG_BOT_RUNBOOK.md` for the Telegram backlog fix."
 - Review `docs/TELEGRAM_IMAGE_DELIVERY_DESIGN.md` for the Telegram image delivery fix.
 - Review `docs/TELEGRAM_IMAGE_DELIVERY_SCOPE.md` for the Telegram image delivery fix.
 - Review the TASK-005 documentation diff for `docs/WEB_VIEWER_RUNBOOK.md`, `README.md`,

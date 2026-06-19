@@ -198,10 +198,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 70 tg_bot tests pass
+- 76 tg_bot tests pass
 - 52 snapshot triage tests pass
 - 28 web_viewer tests pass
-- 150 total tests pass
+- 156 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
