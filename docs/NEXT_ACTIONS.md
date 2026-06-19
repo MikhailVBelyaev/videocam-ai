@@ -4,42 +4,30 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-003 implementation for "Ignore old Telegram image backlog and process fresh live"
-is complete and in `review_required`. Modified `tg_bot/bot.py` to add `MAX_IMAGE_AGE_SECONDS`
-env var (default 3600), newest-first sub-list sort, max-age staleness filter,
-`_SKIPPED_STALE_COUNT` and `_LAST_SKIP_REASON` counters, and extended `/admin` fields.
-Added 12 focused tests (7 in `TgBotFreshFirstTests`, 5 in `TgBotFreshFirstCompatibilityTests`).
-Updated `README.md` and `docs/TG_BOT_RUNBOOK.md`. All 195 tests pass; `py_compile` clean.
+TASK-004 QA validation for "Ignore old Telegram image backlog and process fresh live"
+is complete and in `review_required`. Added 9 focused QA tests in `tests/test_tg_bot.py`
+(`TgBotFreshFirstQATests`) covering: all-stale scenario, mixed staleness ordering,
+_LAST_SKIP_REASON for similar/non-kept/stale paths, stale filter in kept/ mode,
+newest-first with send cap, /admin backlog counter, /admin no-image fields, and
+getmtime OSError fail-open behavior. No source code changes required.
+All 204 tests pass (124 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.
 
-## New Review Items (TASK-003 fresh-first implementation)
+## New Review Items (TASK-004 fresh-first QA)
 
-- Review `tg_bot/bot.py` diff for the newest-first + max-age implementation.
-  - Verify `MAX_IMAGE_AGE_SECONDS` env var (default 3600) with graceful fallback on invalid value.
-  - Verify `_send_new_images_iteration()` sorts `remaining` by `mtime` descending after computing stable `start_index`.
-  - Verify max-age filter skips images older than `MAX_IMAGE_AGE_SECONDS`, increments `_SKIPPED_STALE_COUNT`, and sets `_LAST_SKIP_REASON = "stale"`.
-  - Verify `_LAST_SKIP_REASON` is set for "similar" and "non-kept" skip paths as well.
-  - Verify `_format_admin_message()` includes `Skipped (stale)`, `Backlog size`, `Latest capture`, `Latest sent`, and `Last skip reason`.
-  - Verify existing concurrency guard, send cap, cooldown bypass, triage-aware selection, startup initialization, `/state`, and image-sending behavior are unchanged (no regression).
-  - Decide whether to accept, revise, or reject the implementation.
+- Review `tests/test_tg_bot.py` diff for 9 new QA tests (`TgBotFreshFirstQATests`).
+  - Verify `test_all_images_stale_no_sends`: all images stale → zero sends, counter increments, `_LAST_SKIP_REASON = "stale"`.
+  - Verify `test_mixed_staleness_preserves_newest_first_order`: 1 stale + 2 fresh → only fresh sent in newest-first order.
+  - Verify `test_similar_skip_sets_last_skip_reason`: similarity skip sets `_LAST_SKIP_REASON = "similar"`.
+  - Verify `test_non_kept_skip_sets_last_skip_reason`: non-kept skip sets `_LAST_SKIP_REASON = "non-kept"`.
+  - Verify `test_stale_skip_in_kept_mode`: stale kept/ image skipped, fresh kept/ image sent, stale counter increments.
+  - Verify `test_newest_first_respects_send_cap`: 7 fresh images with cap=5 → freshest 5 sent first.
+  - Verify `test_admin_backlog_count_with_last_sent`: backlog size counts remaining images after cursor.
+  - Verify `test_admin_fields_when_no_image_data`: `/admin` shows Unknown/Never/— when no image data.
+  - Verify `test_getmtime_oserror_bypasses_stale_filter`: OSError on getmtime results in fail-open (file not filtered as stale).
+  - Decide whether to accept, revise, or reject the QA tests.
+  - Notable finding: `os.path.getmtime` OSError in staleness check results in fail-open behavior (file not filtered as stale). Reasonable defensive design but worth noting.
 
-- Review `tests/test_tg_bot.py` diff for 12 new focused tests.
-  - Verify `TgBotFreshFirstTests` (7 tests) covers newest-first ordering, max-age filter skip, default/custom/invalid env var, `/admin` extended fields, and cursor stability.
-  - Verify `TgBotFreshFirstCompatibilityTests` (5 tests) covers concurrency guard, send cap, cooldown bypass, triage-aware selection, and startup initialization unchanged.
-  - Decide whether to accept, revise, or reject the test coverage.
-
-- Review `README.md` and `docs/TG_BOT_RUNBOOK.md` diffs.
-  - Verify `MAX_IMAGE_AGE_SECONDS` env var is documented.
-  - Verify newest-first behavior and max-age filter are described accurately.
-  - Verify new `/admin` fields are documented.
-  - Verify validation counts updated to 115 tg_bot tests / 195 total.
-  - Decide whether to accept, revise, or reject the documentation.
-
-- Review `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
-  `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml` diffs.
-  - Verify TASK-003 is recorded accurately and counts are correct (115 tg_bot, 195 total).
-  - Decide whether to accept, revise, or reject the project status updates.
-
-## Prior Review Items (TASK-002 fresh-first design)
+## Prior Review Items (TASK-003 fresh-first implementation)
 
 - Review `docs/TELEGRAM_FRESH_FIRST_DESIGN.md`.
   - Verify affected services, modules, data flows, and interfaces are accurate.

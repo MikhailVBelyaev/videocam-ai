@@ -1,5 +1,24 @@
 # Development Log
 
+## 2026-06-19 (QA)
+
+- Completed TASK-004 QA validation for "Ignore old Telegram image backlog and process fresh live"
+  (Job ID: 2026-06-19_172411_videocam-ai-ignore-old-telegram-image-backlog-and-process-fr-task-004).
+  - Added 9 focused QA tests in `tests/test_tg_bot.py` (new class `TgBotFreshFirstQATests`):
+    - `test_all_images_stale_no_sends`: All images stale → zero sends, `_SKIPPED_STALE_COUNT` increments per file, `_LAST_SKIP_REASON = "stale"`.
+    - `test_mixed_staleness_preserves_newest_first_order`: 1 stale + 2 fresh → only fresh sent in newest-first order.
+    - `test_similar_skip_sets_last_skip_reason`: Similarity skip sets `_LAST_SKIP_REASON = "similar"`.
+    - `test_non_kept_skip_sets_last_skip_reason`: Non-kept skip sets `_LAST_SKIP_REASON = "non-kept"`.
+    - `test_stale_skip_in_kept_mode`: Stale kept/ image skipped, fresh kept/ image sent; stale counter increments.
+    - `test_newest_first_respects_send_cap`: With 7 fresh images and cap=5, freshest 5 sent first.
+    - `test_admin_backlog_count_with_last_sent`: Backlog size counts remaining images after cursor.
+    - `test_admin_fields_when_no_image_data`: `/admin` shows Unknown/Never/— when no image data available.
+    - `test_getmtime_oserror_bypasses_stale_filter`: When `os.path.getmtime` raises OSError, file bypasses stale filter (fail-open behavior).
+  - No source code changes required.
+  - All 124 tg_bot tests pass (115 existing + 9 new); all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 204 tests pass. `py_compile` clean.
+  - Notable finding: `os.path.getmtime` OSError in staleness check results in fail-open behavior (file not filtered as stale). This is a reasonable defensive design but worth noting for operational awareness.
+
 ## 2026-06-19 (Implementation)
 
 - Completed TASK-003 implementation for "Ignore old Telegram image backlog and process fresh live"
