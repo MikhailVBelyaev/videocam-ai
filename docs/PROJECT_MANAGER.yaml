@@ -5,22 +5,21 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: 'TASK-002 design for "Fix remaining Telegram image backlog problem" complete; awaiting human review. Created docs/TELEGRAM_BACKLOG_DESIGN.md with affected services (tg_bot/bot.py primary), modules, data flows, interfaces, implementation approach (startup state initialization via _initialize_startup_state() helper), key tradeoffs (helper extraction, state persistence, cooldown timestamp), risks, and validation plan. No source code changes. All 146 tests pass. py_compile clean.'
+current_goal: 'TASK-003 implementation for "Fix remaining Telegram image backlog problem" complete; awaiting human review. Modified tg_bot/bot.py to add _initialize_startup_state() helper and call it from main() when load_last_sent_file() returns (None, None). Added 4 focused tests in tests/test_tg_bot.py (TgBotStartupStateTests). Updated README.md and docs/TG_BOT_RUNBOOK.md with startup behavior docs and validation counts (70 tg_bot tests, 150 total). All 150 tests pass. py_compile clean.'
 next_actions:
-- "Review docs/TELEGRAM_BACKLOG_DESIGN.md for the Telegram image backlog fix."
-- "  - Verify affected services, modules, data flows, and interfaces are accurate."
-- "  - Verify implementation approach covers startup state initialization when .last_sent_file is missing."
-- "  - Verify key tradeoffs are documented with rationale (helper extraction, state persistence, cooldown timestamp)."
-- "  - Verify risks and mitigations are adequate (overlap with pending Telegram delivery reviews, initialized image may never have been sent, mtime ordering)."
-- "  - Verify no scope expansion into camera capture, triage pipeline, web viewer, object detection, or container infrastructure."
-- "  - Decide whether to accept, revise, or reject the design."
-- "  - If accepted, prepare a TASK-003 implementation job."
+- "Review the TASK-003 implementation diff for tg_bot/bot.py, tests/test_tg_bot.py, README.md, and docs/TG_BOT_RUNBOOK.md."
+- "  - Verify _initialize_startup_state() scans the latest dated folder and sets"
+- "    LAST_SENT_IMAGE/LAST_SENT_FOLDER to the most recently modified image."
+- "  - Verify save_last_sent_file() is called during initialization to persist state."
+- "  - Verify main() calls _initialize_startup_state() only when load_last_sent_file() returns (None, None)."
+- "  - Verify existing behavior when .last_sent_file exists is unchanged (no regression)."
+- "  - Verify existing concurrency guard, send cap, cooldown bypass, /admin, and /state behaviors are unchanged."
+- "  - Decide whether to accept, revise, or reject the implementation."
 - "Review docs/TELEGRAM_BACKLOG_SCOPE.md for the Telegram image backlog fix."
 - "  - Verify minimum deliverable covers startup state initialization when .last_sent_file is missing."
 - "  - Verify acceptance criteria are measurable and exclusions are explicit."
 - "  - Verify no scope expansion into camera capture, triage pipeline, web viewer, object detection, or container infrastructure."
 - "  - Decide whether to accept, revise, or reject the scope."
-- "  - If accepted, prepare a TASK-002 design job."
 - "Review the TASK-005 documentation diff for docs/TG_BOT_RUNBOOK.md."
 - "  - Verify runbook accurately describes concurrency guard, per-iteration send cap,"
 - "    cooldown bypass, and /admin latest image file send behavior."
@@ -136,6 +135,8 @@ next_actions:
 - Review the TASK-002 design doc `docs/TASK002_IMPROVE_IMAGE_QUALITY_STATISTICS_DESIGN.md`.
 - Continue reviewing TASK-004/005 increments as needed.
 next_tasks:
+- Review the TASK-003 implementation diff for `tg_bot/bot.py`, `tests/test_tg_bot.py`,
+  `README.md`, and `docs/TG_BOT_RUNBOOK.md` for the Telegram backlog fix.
 - Review `docs/TELEGRAM_IMAGE_DELIVERY_DESIGN.md` for the Telegram image delivery fix.
 - Review `docs/TELEGRAM_IMAGE_DELIVERY_SCOPE.md` for the Telegram image delivery fix.
 - Review the TASK-005 documentation diff for `docs/WEB_VIEWER_RUNBOOK.md`, `README.md`,

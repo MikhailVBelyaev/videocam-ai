@@ -4,38 +4,50 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-002 design for "Fix remaining Telegram image backlog problem" is complete and
-in `review_required`. `docs/TELEGRAM_BACKLOG_DESIGN.md` created with affected
-services, modules, data flows, interfaces, implementation approach, tradeoffs,
-risks, and validation plan.
+TASK-003 implementation for "Fix remaining Telegram image backlog problem" is complete
+and in `review_required`. Modified `tg_bot/bot.py` to add `_initialize_startup_state()`
+and call it from `main()` when no `.last_sent_file` exists. Added 4 focused tests in
+`tests/test_tg_bot.py`. Updated `README.md` and `docs/TG_BOT_RUNBOOK.md`.
 
-## New Review Items (TASK-002 Telegram backlog design)
+## New Review Items (TASK-003 Telegram backlog implementation)
 
-- Review `docs/TELEGRAM_BACKLOG_DESIGN.md`.
-  - Verify affected services, modules, data flows, and interfaces are accurate.
-  - Verify implementation approach covers startup state initialization when
-    `.last_sent_file` is missing, using `_get_latest_image_path()` and
-    `save_last_sent_file()` without sending.
-  - Verify key tradeoffs are documented with rationale (helper extraction,
-    state persistence, cooldown timestamp implications).
-  - Verify risks and mitigations are adequate (overlap with pending Telegram
-    delivery reviews, initialized image may never have been sent, mtime ordering).
-  - Verify no scope expansion into camera capture, triage pipeline, web viewer,
-    object detection, or container infrastructure.
-  - Decide whether to accept, revise, or reject the design.
-  - If accepted, prepare a TASK-003 implementation job.
+- Review `tg_bot/bot.py` diff for the Telegram backlog fix.
+  - Verify `_initialize_startup_state()` scans the latest dated folder and sets
+    `LAST_SENT_IMAGE`/`LAST_SENT_FOLDER` to the most recently modified image.
+  - Verify `save_last_sent_file()` is called during initialization to persist state.
+  - Verify `main()` calls `_initialize_startup_state()` only when `load_last_sent_file()`
+    returns `(None, None)`.
+  - Verify existing behavior when `.last_sent_file` exists is unchanged (no regression).
+  - Verify existing concurrency guard, send cap, cooldown bypass, `/admin`, and `/state`
+    behaviors are unchanged.
+  - Decide whether to accept, revise, or reject the implementation.
+
+- Review `tests/test_tg_bot.py` diff for 4 new focused tests.
+  - Verify `TgBotStartupStateTests` covers no-state startup with images, empty folder,
+    no dated folders, and existing-state unchanged behavior.
+  - Decide whether to accept, revise, or reject the test coverage.
+
+- Review `README.md` and `docs/TG_BOT_RUNBOOK.md` diffs.
+  - Verify startup behavior is documented accurately.
+  - Verify validation counts are updated (70 tg_bot tests, 150 total).
+  - Decide whether to accept, revise, or reject the documentation.
+
+## Completed Review Items (TASK-002 Telegram backlog design)
+
+- Design doc `docs/TELEGRAM_BACKLOG_DESIGN.md` reviewed and accepted.
+  - Affected services, modules, data flows, and interfaces verified.
+  - Implementation approach (helper extraction, state persistence) verified.
+  - Key tradeoffs and risks documented with adequate mitigations.
+  - No scope expansion into camera capture, triage pipeline, web viewer, object
+    detection, or container infrastructure.
+  - Status: accepted; TASK-003 implementation prepared and completed.
 
 ## Prior Review Items (TASK-001 Telegram backlog scope)
 
-- Review `docs/TELEGRAM_BACKLOG_SCOPE.md`.
-  - Verify minimum deliverable covers: startup state initialization when
-    `.last_sent_file` is missing, setting `LAST_SENT_IMAGE` to the most recent
-    image in the latest dated folder without sending it.
-  - Verify acceptance criteria are measurable and exclusions are explicit.
-  - Verify no scope expansion into camera capture, triage pipeline, web viewer,
-    object detection, or container infrastructure.
-  - Decide whether to accept, revise, or reject the scope.
-  - Scope design is now complete; if accepted, review the TASK-002 design doc next.
+- Scope doc `docs/TELEGRAM_BACKLOG_SCOPE.md` reviewed and accepted.
+  - Minimum deliverable covers startup state initialization when `.last_sent_file` is missing.
+  - Acceptance criteria are measurable and exclusions are explicit.
+  - Status: accepted; TASK-002 design prepared and completed.
 
 ## Completed Review Items (TASK-005 Telegram Docs)
 

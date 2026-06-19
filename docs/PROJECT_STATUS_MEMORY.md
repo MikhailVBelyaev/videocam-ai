@@ -4,6 +4,17 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-003 implementation for "Fix remaining Telegram image backlog problem"
+  is complete and in `review_required`. Modified `tg_bot/bot.py` to add
+  `_initialize_startup_state()` helper and call it from `main()` when no
+  `.last_sent_file` exists. Added 4 focused tests in `tests/test_tg_bot.py`
+  (TgBotStartupStateTests). Updated `README.md` and `docs/TG_BOT_RUNBOOK.md`
+  with startup behavior docs and validation counts (70 tg_bot tests, 150 total).
+  Updated project status docs. All 150 tests pass. `py_compile` clean.
+- TASK-002 design for "Fix remaining Telegram image backlog problem"
+  is complete and in `review_required`. Created `docs/TELEGRAM_BACKLOG_DESIGN.md`
+  with affected services, modules, data flows, interfaces, implementation approach,
+  tradeoffs, risks, and validation plan. All 146 tests pass; no source code changes.
 - TASK-005 documentation for "Fix production Telegram image delivery and admin statistics"
   is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` with image
   sender safeguards (concurrency guard, per-iteration send cap, cooldown bypass),

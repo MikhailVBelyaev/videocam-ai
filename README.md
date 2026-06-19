@@ -156,6 +156,9 @@ docker compose up -d tg_bot
 ```
 
 The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_ID`.
+On first start or when `output/.last_sent_file` is missing, the bot initializes its
+state to the most recent image in the latest dated folder without sending it. This
+prevents draining the entire folder on restart.
 The sender includes three production safeguards:
 
 - **Concurrency guard** — overlapping sender iterations are skipped so only one pass runs at a time.

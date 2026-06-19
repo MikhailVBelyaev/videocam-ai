@@ -14,11 +14,13 @@ from tg_bot.bot import (
     _format_uptime,
     _get_latest_image_path,
     _get_latest_run_date,
+    _initialize_startup_state,
     _is_admin_chat,
     _is_fresh,
     _query_container_states,
     _read_latest_summary,
     _summarize_live_output,
+    load_last_sent_file,
     send_photo,
 )
 
@@ -1036,6 +1038,92 @@ class TgBotLatestImageQATests(unittest.TestCase):
                  patch("os.listdir", side_effect=OSError("permission denied")):
                 result = _get_latest_image_path()
                 self.assertIsNone(result)
+
+
+class TgBotStartupStateTests(unittest.TestCase):
+    """Tests for startup state initialization when .last_sent_file is missing."""
+
+    def test_startup_initializes_to_latest_image(self):
+        """When no state file exists, _initialize_startup_state sets LAST_SENT_IMAGE to the latest image."""
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            old_path = os.path.join(folder, "frame_001.jpg")
+            new_path = os.path.join(folder, "frame_002.jpg")
+            open(old_path, "w").close()
+            open(new_path, "w").close()
+            # Make frame_002 newer
+            os.utime(old_path, (1000000, 1000000))
+            os.utime(new_path, (2000000, 2000000))
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                result = _initialize_startup_state()
+                self.assertEqual(result[1], new_path)
+                self.assertEqual(result[0], "2026-06-19")
+                # Verify state file was written
+                self.assertTrue(os.path.exists(state_file))
+                with open(state_file, "r") as f:
+                    content = f.read().strip()
+                self.assertIn("2026-06-19", content)
+                self.assertIn("frame_002.jpg", content)
+
+    def test_startup_empty_folder_leaves_none(self):
+        """When latest dated folder has no images, _initialize_startup_state returns (None, None)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                result = _initialize_startup_state()
+                self.assertIsNone(result[0])
+                self.assertIsNone(result[1])
+                self.assertFalse(os.path.exists(state_file))
+
+    def test_startup_no_dated_folders_leaves_none(self):
+        """When OUTPUT_DIR has no dated folders, _initialize_startup_state returns (None, None)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            state_file = os.path.join(tmp, ".last_sent_file")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                result = _initialize_startup_state()
+                self.assertIsNone(result[0])
+                self.assertIsNone(result[1])
+                self.assertFalse(os.path.exists(state_file))
+
+    def test_existing_state_file_not_overwritten(self):
+        """When .last_sent_file exists, load_last_sent_file loads it and does not overwrite."""
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(folder)
+            img_path = os.path.join(folder, "frame_001.jpg")
+            open(img_path, "w").close()
+
+            state_file = os.path.join(tmp, ".last_sent_file")
+            with open(state_file, "w") as f:
+                f.write("2026-06-18/frame_old.jpg\n")
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.LAST_SENT_FILE", state_file):
+                loaded_folder, loaded_image = load_last_sent_file()
+                self.assertEqual(loaded_folder, "2026-06-18")
+                self.assertIn("frame_old.jpg", loaded_image)
+                # Verify state file content is unchanged
+                with open(state_file, "r") as f:
+                    content = f.read().strip()
+                self.assertEqual(content, "2026-06-18/frame_old.jpg")
 
 
 if __name__ == "__main__":

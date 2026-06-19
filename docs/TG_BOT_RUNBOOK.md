@@ -53,6 +53,17 @@ is delivered even if it is perceptually similar to the last sent image.
   updates and normal similarity filtering resumes for the remainder of the iteration.
 - Purpose: prevents the bot from going silent when the scene is static
 
+## Startup Behavior
+
+On first start or when `output/.last_sent_file` is missing, the bot scans the
+latest dated folder for the most recently modified image and initializes
+`LAST_SENT_IMAGE` and `LAST_SENT_FOLDER` to that file **without sending it**.
+The state is immediately persisted to `.last_sent_file` so subsequent restarts
+skip re-initialization.
+
+This prevents the backlog drain loop that would otherwise walk through every
+image in the folder from index 0 on startup.
+
 ## Commands
 
 ### `/admin`
@@ -187,10 +198,10 @@ Run full test suite:
 ```
 
 Expected results:
-- 66 tg_bot tests pass
+- 70 tg_bot tests pass
 - 52 snapshot triage tests pass
 - 28 web_viewer tests pass
-- 146 total tests pass
+- 150 total tests pass
 - `py_compile` clean on all modified Python files
 
 ## Troubleshooting
@@ -205,3 +216,4 @@ Expected results:
 | Bot goes silent during static scenes | Cooldown bypass has not yet expired | This is expected behavior; the next image is sent after `SEND_COOLDOWN_SECONDS` even if similar |
 | Sender warnings about "maximum running instances reached" | Overlapping sender iterations (pre-guard behavior) | Ensure you are running the version with `_SENDER_LOCK`; restart the bot if the lock appears stuck |
 | `/admin` sends text but no photo | Latest dated folder contains no images, or photo exceeds Telegram limits | Verify `output/YYYY-MM-DD/` contains `.jpg`/`.jpeg`/`.png` files; check logs for send errors |
+| Bot drains old images slowly after restart | `.last_sent_file` was missing on startup | This is fixed in the current version; verify logs show "Initialized state to latest image" on first start |

@@ -1,5 +1,31 @@
 # Development Log
 
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "Fix remaining Telegram image backlog problem"
+  (Job ID: 2026-06-19_151143_videocam-ai-fix-remaining-telegram-image-backlog-problem-task-003).
+  - Modified `tg_bot/bot.py`:
+    - Added `_initialize_startup_state()` helper that scans the latest dated folder
+      for the most recently modified image and initializes `LAST_SENT_IMAGE` and
+      `LAST_SENT_FOLDER` without sending.
+    - Modified `main()` to call `_initialize_startup_state()` when `load_last_sent_file()`
+      returns `(None, None)`.
+    - Persisted initialized state via `save_last_sent_file()` so subsequent restarts
+      skip re-initialization.
+  - Added 4 focused tests in `tests/test_tg_bot.py` (TgBotStartupStateTests):
+    - no-state startup with images → initialized to latest image and state file written.
+    - no-state startup with empty folder → returns (None, None), no state file written.
+    - no-state startup with no dated folders → returns (None, None), no state file written.
+    - existing `.last_sent_file` present → `load_last_sent_file()` behavior unchanged.
+  - Updated `README.md` with startup behavior note.
+  - Updated `docs/TG_BOT_RUNBOOK.md` with "Startup Behavior" section, updated
+    validation counts (70 tg_bot tests, 150 total), and added troubleshooting entry.
+  - Updated `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+    `docs/PROJECT_MANAGER.yaml`, and `docs/DEVELOPMENT_LOG.md`.
+  - All 70 tg_bot tests pass; all 52 snapshot triage tests pass; all 28 web_viewer tests pass.
+  - Total 150 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Design)
 
 - Completed TASK-002 design for "Fix remaining Telegram image backlog problem"

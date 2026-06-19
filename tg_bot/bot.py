@@ -126,6 +126,19 @@ def save_last_sent_file(folder: str, file_path: str):
         f.write(f"{folder}/{rel_path}\n")
 
 
+def _initialize_startup_state():
+    """Initialize LAST_SENT_IMAGE and LAST_SENT_FOLDER to the latest existing image when no state file exists."""
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER
+    latest_image = _get_latest_image_path()
+    if latest_image:
+        LAST_SENT_IMAGE = latest_image
+        LAST_SENT_FOLDER = os.path.relpath(os.path.dirname(latest_image), OUTPUT_DIR)
+        save_last_sent_file(LAST_SENT_FOLDER, LAST_SENT_IMAGE)
+        logger.info(f"Initialized state to latest image: {latest_image}")
+        return LAST_SENT_FOLDER, LAST_SENT_IMAGE
+    return None, None
+
+
 def send_photo(file_path: str):
     global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _LAST_SENT_TIMESTAMP
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
@@ -542,6 +555,7 @@ def main():
         logger.info(f"Loaded last sent file from state: {LAST_SENT_IMAGE}")
     else:
         logger.info("No previously sent file found in state")
+        _initialize_startup_state()
 
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("admin", admin_command))
