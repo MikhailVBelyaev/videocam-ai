@@ -4,6 +4,16 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-002 design for "Fix production Telegram image delivery: bot sends repeated
+  static/latest" is complete and in `review_required`. Created
+  `docs/TELEGRAM_REPEATED_STATIC_DESIGN.md` defining affected services, modules,
+  data flows, implementation approach (triage-aware image selection via `kept/`
+  subfolder, configurable `IMAGE_SIMILARITY_THRESHOLD` default 10, send statistics
+  counters in `/admin`), five key tradeoffs, risks, and validation plan.
+  No source code changes; all 156 tests pass; `py_compile` clean.
+
+## Prior Update
+
 - TASK-001 scope definition for "Fix production Telegram image delivery: bot sends
   repeated static/latest" is complete and in `review_required`. Created
   `docs/TELEGRAM_REPEATED_STATIC_SCOPE.md` defining minimum deliverable (triage-aware

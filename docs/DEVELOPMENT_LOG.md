@@ -2,6 +2,32 @@
 
 ## 2026-06-19 (Planning)
 
+- Completed TASK-002 design for "Fix production Telegram image delivery:
+  bot sends repeated static/latest"
+  (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-002).
+  - Documented affected services, modules, data flows, and interfaces in
+    `docs/TELEGRAM_REPEATED_STATIC_DESIGN.md`.
+  - Implementation approach: five additive changes to `tg_bot/bot.py`:
+    (A) configurable `IMAGE_SIMILARITY_THRESHOLD` env var (default 10) replacing
+    hardcoded threshold=5, (B) triage-aware image selection via `_kept_images_exist()`
+    and `_get_image_list()` helpers preferring `kept/` subfolder with fallback to
+    all images, (C) send statistics counters (`_SENT_COUNT`,
+    `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT`) as module-level
+    in-memory variables, (D) `/admin` display of send statistics (always shown),
+    (E) explicit `threshold=IMAGE_SIMILARITY_THRESHOLD` in sender similarity call.
+  - Documented five key tradeoffs: kept/ subfolder vs. JSON filter (kept/ chosen
+    for simplicity), always-show vs. conditional statistics (always-show for
+    visibility), threshold 10 vs. 5 (10 chosen to suppress static), full directory
+    scan vs. estimate for non-kept counting (full scan for accuracy),
+    send_photo vs. iteration counter for _SENT_COUNT (send_photo for single truth).
+  - Documented six risks with mitigations: kept-folder missing/empty, higher threshold
+    suppressing real changes, kept-folder lag, counter reset on restart, scope
+    overlap with pending reviews, LAST_SENT_IMAGE path resolution with kept/.
+  - Rejected alternatives: JSON-based filtering, persistent statistics, per-iteration
+    dynamic threshold.
+  - No source code changes. All 156 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 - Completed TASK-001 scope definition for "Fix production Telegram image delivery:
   bot sends repeated static/latest"
   (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-001).

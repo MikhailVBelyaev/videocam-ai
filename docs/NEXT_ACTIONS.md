@@ -4,22 +4,35 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-001 scope for "Fix production Telegram image delivery: bot sends repeated
+TASK-002 design for "Fix production Telegram image delivery: bot sends repeated
 static/latest" is complete and in `review_required`. Created
-`docs/TELEGRAM_REPEATED_STATIC_SCOPE.md` defining minimum deliverable, acceptance
-criteria, and exclusions. No source code changes; all 156 tests pass.
+`docs/TELEGRAM_REPEATED_STATIC_DESIGN.md` defining affected services, data flows,
+implementation approach (triage-aware image selection via `kept/` subfolder,
+configurable `IMAGE_SIMILARITY_THRESHOLD` default 10, send statistics counters
+in `/admin`), five key tradeoffs, risks, and validation plan. No source code
+changes; all 156 tests pass.
 
-## New Review Items (TASK-001 repeated-static scope)
+## New Review Items (TASK-002 repeated-static design)
 
-- Review `docs/TELEGRAM_REPEATED_STATIC_SCOPE.md`.
-  - Verify minimum deliverable covers: triage-aware image selection (prefer `kept/`
-    subfolder), perceptual-hash threshold increase (default 10, configurable via
-    env var), and send statistics counters in `/admin`.
-  - Verify acceptance criteria are measurable and exclusions are explicit.
+- Review `docs/TELEGRAM_REPEATED_STATIC_DESIGN.md`.
+  - Verify affected services, modules, data flows, and interfaces are accurate.
+  - Verify implementation approach covers: triage-aware image selection (prefer
+    `kept/` subfolder, fallback to all images), configurable perceptual-hash
+    threshold (`IMAGE_SIMILARITY_THRESHOLD`, default 10), send statistics
+    counters (`_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT`),
+    and `/admin` statistics display.
+  - Verify key tradeoffs are documented with rationale (kept/ vs. JSON filter,
+    always-show vs. conditional statistics, threshold 10 vs. 5, full directory
+    scan for non-kept counting, send_photo vs. iteration counter location).
+  - Verify risks and mitigations are adequate (kept-folder lag, higher threshold
+    suppressing real changes, counter reset on restart, scope overlap with
+    pending reviews, kept/ path resolution with LAST_SENT_IMAGE).
   - Verify no scope expansion into triage pipeline changes, web viewer, camera
     capture, staleness detection, persistent statistics, or Docker infrastructure.
-  - Decide whether to accept, revise, or reject the scope.
-  - If accepted, prepare a TASK-002 design job.
+  - Decide whether to accept, revise, or reject the design.
+  - If accepted, prepare a TASK-003 implementation job.
+
+## Prior Review Items (TASK-001 repeated-static scope)
 
 ## Prior Review Items (TASK-005 Telegram backlog documentation)
 
