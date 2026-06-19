@@ -4,6 +4,15 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-001 scope definition for "Fix production Telegram image delivery: bot sends
+  repeated static/latest" is complete and in `review_required`. Created
+  `docs/TELEGRAM_REPEATED_STATIC_SCOPE.md` defining minimum deliverable (triage-aware
+  image selection, perceptual-hash threshold increase to configurable default 10,
+  send statistics counters in `/admin`), measurable acceptance criteria, and explicit
+  exclusions. No source code changes; all 156 tests pass; `py_compile` clean.
+
+## Prior Update
+
 - TASK-005 documentation for "Fix remaining Telegram image backlog problem" is
   complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation
   counts to 76 tg_bot tests / 156 total tests. Verified `README.md` consistency.

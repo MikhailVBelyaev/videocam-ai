@@ -1,5 +1,26 @@
 # Development Log
 
+## 2026-06-19 (Planning)
+
+- Completed TASK-001 scope definition for "Fix production Telegram image delivery:
+  bot sends repeated static/latest"
+  (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-001).
+  - Defined minimum deliverable: triage-aware image selection (prefer `kept/`
+    subfolder, skip non-kept frames), perceptual-hash threshold increase from 5
+    to configurable default 10 (`IMAGE_SIMILARITY_THRESHOLD` env var), and send
+    statistics counters (sent, skipped-duplicate, skipped-non-kept) in `/admin`.
+  - Recorded measurable acceptance criteria and explicit exclusions in
+    `docs/TELEGRAM_REPEATED_STATIC_SCOPE.md`.
+  - Explicitly excluded: triage pipeline changes, staleness detection, persistent
+    statistics, motion/object detection in tg_bot, web viewer changes, Docker
+    infrastructure changes.
+  - Documented risks: kept-folder lag (mitigated by fallback), higher threshold
+    suppressing real changes (mitigated by cooldown bypass and configurable
+    threshold), in-memory statistics reset on restart, scope overlap with pending
+    reviews.
+  - No source code changes. All 156 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Docs)
 
 - Completed TASK-005 documentation for "Fix remaining Telegram image backlog problem"

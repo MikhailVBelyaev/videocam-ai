@@ -4,13 +4,24 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-005 documentation for "Fix remaining Telegram image backlog problem" is complete
-and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts to
-76 tg_bot tests / 156 total tests. Verified `README.md` consistency. Updated
-`docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`,
-and `docs/PROJECT_MANAGER.yaml`. All 156 tests pass. `py_compile` clean.
+TASK-001 scope for "Fix production Telegram image delivery: bot sends repeated
+static/latest" is complete and in `review_required`. Created
+`docs/TELEGRAM_REPEATED_STATIC_SCOPE.md` defining minimum deliverable, acceptance
+criteria, and exclusions. No source code changes; all 156 tests pass.
 
-## New Review Items (TASK-005 Telegram backlog documentation)
+## New Review Items (TASK-001 repeated-static scope)
+
+- Review `docs/TELEGRAM_REPEATED_STATIC_SCOPE.md`.
+  - Verify minimum deliverable covers: triage-aware image selection (prefer `kept/`
+    subfolder), perceptual-hash threshold increase (default 10, configurable via
+    env var), and send statistics counters in `/admin`.
+  - Verify acceptance criteria are measurable and exclusions are explicit.
+  - Verify no scope expansion into triage pipeline changes, web viewer, camera
+    capture, staleness detection, persistent statistics, or Docker infrastructure.
+  - Decide whether to accept, revise, or reject the scope.
+  - If accepted, prepare a TASK-002 design job.
+
+## Prior Review Items (TASK-005 Telegram backlog documentation)
 
 - Review `docs/TG_BOT_RUNBOOK.md` diff for updated validation counts.
   - Verify tg_bot test count is 76 and total test count is 156.
