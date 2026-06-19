@@ -12,13 +12,16 @@ from tg_bot.bot import (
     _format_admin_message,
     _format_state_message,
     _format_uptime,
+    _get_image_list,
     _get_latest_image_path,
     _get_latest_run_date,
     _initialize_startup_state,
     _is_admin_chat,
     _is_fresh,
+    _kept_images_exist,
     _query_container_states,
     _read_latest_summary,
+    _send_new_images_iteration,
     _summarize_live_output,
     load_last_sent_file,
     send_photo,
@@ -1296,6 +1299,359 @@ class TgBotStartupStateQATests(unittest.TestCase):
                 self.assertNotIn("frame_003.jpg", sent_basenames)
                 self.assertIn("frame_004.jpg", sent_basenames)
                 self.assertIn("frame_005.jpg", sent_basenames)
+
+
+class TgBotKeptImageTests(unittest.TestCase):
+    """Tests for _kept_images_exist() and _get_image_list() helpers."""
+
+    def test_kept_images_exist_returns_true_when_kept_has_images(self):
+        """_kept_images_exist returns True when kept/ exists and contains image files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            open(os.path.join(kept_path, "frame_001.jpg"), "w").close()
+            from tg_bot.bot import _kept_images_exist
+            result = _kept_images_exist(tmp)
+            self.assertTrue(result)
+
+    def test_kept_images_exist_returns_false_when_no_kept_folder(self):
+        """_kept_images_exist returns False when kept/ subfolder does not exist."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from tg_bot.bot import _kept_images_exist
+            result = _kept_images_exist(tmp)
+            self.assertFalse(result)
+
+    def test_kept_images_exist_returns_false_when_kept_empty(self):
+        """_kept_images_exist returns False when kept/ exists but has no image files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            # Only a non-image file
+            open(os.path.join(kept_path, "notes.txt"), "w").close()
+            from tg_bot.bot import _kept_images_exist
+            result = _kept_images_exist(tmp)
+            self.assertFalse(result)
+
+    def test_kept_images_exist_returns_false_when_kept_has_only_dotfiles(self):
+        """_kept_images_exist ignores dotfiles in kept/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            open(os.path.join(kept_path, ".DS_Store"), "w").close()
+            from tg_bot.bot import _kept_images_exist
+            result = _kept_images_exist(tmp)
+            self.assertFalse(result)
+
+    def test_kept_images_exist_handles_oserror(self):
+        """_kept_images_exist returns False on OSError when listing kept/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            open(os.path.join(kept_path, "frame.jpg"), "w").close()
+            from tg_bot.bot import _kept_images_exist
+            with patch("tg_bot.bot.os.listdir", side_effect=OSError("permission denied")):
+                result = _kept_images_exist(tmp)
+            self.assertFalse(result)
+
+    def test_get_image_list_returns_kept_files_when_kept_exists(self):
+        """_get_image_list returns filenames from kept/ subfolder when it has images."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            open(os.path.join(kept_path, "kept_001.jpg"), "w").close()
+            open(os.path.join(kept_path, "kept_002.png"), "w").close()
+            # Also create files in root (should NOT be returned)
+            open(os.path.join(tmp, "root_001.jpg"), "w").close()
+            from tg_bot.bot import _get_image_list
+            result = _get_image_list(tmp)
+            self.assertEqual(result, ["kept_001.jpg", "kept_002.png"])
+
+    def test_get_image_list_falls_back_to_root_when_no_kept(self):
+        """_get_image_list returns root files when kept/ does not exist."""
+        with tempfile.TemporaryDirectory() as tmp:
+            open(os.path.join(tmp, "root_001.jpg"), "w").close()
+            open(os.path.join(tmp, "root_002.jpeg"), "w").close()
+            # No kept/ subfolder
+            from tg_bot.bot import _get_image_list
+            result = _get_image_list(tmp)
+            self.assertEqual(result, ["root_001.jpg", "root_002.jpeg"])
+
+    def test_get_image_list_falls_back_when_kept_empty(self):
+        """_get_image_list falls back to root when kept/ exists but has no images."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            # Only a dotfile in kept/
+            open(os.path.join(kept_path, ".hidden"), "w").close()
+            # Image in root
+            open(os.path.join(tmp, "root_img.jpg"), "w").close()
+            from tg_bot.bot import _get_image_list
+            result = _get_image_list(tmp)
+            self.assertEqual(result, ["root_img.jpg"])
+
+    def test_get_image_list_handles_oserror_on_kept(self):
+        """_get_image_list falls back to root on OSError listing kept/."""
+        with tempfile.TemporaryDirectory() as tmp:
+            kept_path = os.path.join(tmp, "kept")
+            os.makedirs(kept_path)
+            open(os.path.join(kept_path, "kept_img.jpg"), "w").close()
+            open(os.path.join(tmp, "root_img.jpg"), "w").close()
+
+            from tg_bot.bot import _get_image_list
+            orig_listdir = os.listdir
+            def listdir_side_effect(path):
+                if path == kept_path:
+                    raise OSError("permission denied")
+                return orig_listdir(path)
+
+            with patch("tg_bot.bot.os.listdir", side_effect=listdir_side_effect):
+                result = _get_image_list(tmp)
+            # Falls back to root
+            self.assertEqual(result, ["root_img.jpg"])
+
+    def test_get_image_list_handles_oserror_on_root(self):
+        """_get_image_list returns empty list on OSError listing root (no kept)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            from tg_bot.bot import _get_image_list
+            with patch("tg_bot.bot.os.listdir", side_effect=OSError("I/O error")):
+                result = _get_image_list(tmp)
+            self.assertEqual(result, [])
+
+
+class TgBotTriageAwareSenderTests(unittest.TestCase):
+    """Tests for triage-aware image selection in the sender."""
+
+    def test_sender_prefers_kept_images_when_kept_folder_exists(self):
+        """When kept/ exists with images, sender only iterates over kept files, not root files."""
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            # 2 images in kept/, 3 in root (2 of which are also in kept)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(kept_folder, "kept_002.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_002.jpg"), "w").close()
+            open(os.path.join(date_folder, "rejected_001.jpg"), "w").close()
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Only the 2 kept files should be sent, not the rejected one
+                sent_basenames = [os.path.basename(call[0][0]) for call in mock_send.call_args_list]
+                self.assertNotIn("rejected_001.jpg", sent_basenames)
+                # kept_001.jpg and kept_002.jpg should be sent from kept/
+                self.assertEqual(mock_send.call_count, 2)
+
+    def test_sender_skips_non_kept_images_when_kept_exists(self):
+        """_SKIPPED_NON_KEPT_COUNT increments for images not in kept/."""
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            kept_folder = os.path.join(date_folder, "kept")
+            os.makedirs(kept_folder)
+            open(os.path.join(kept_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "kept_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "rejected_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "rejected_002.jpg"), "w").close()
+
+            # Reset counters
+            bot_module._SKIPPED_NON_KEPT_COUNT = 0
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # 2 rejected images not in kept/ should be counted
+                self.assertEqual(bot_module._SKIPPED_NON_KEPT_COUNT, 2)
+
+    def test_sender_falls_back_when_kept_missing(self):
+        """When kept/ doesn't exist, sender iterates all images (backward compatibility)."""
+        from tg_bot.bot import _send_new_images_iteration
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            open(os.path.join(date_folder, "frame_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "frame_002.jpg"), "w").close()
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False), \
+                 patch("tg_bot.bot.send_photo", return_value=True) as mock_send, \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                self.assertEqual(mock_send.call_count, 2)
+
+
+class TgBotThresholdEnvTests(unittest.TestCase):
+    """Tests for IMAGE_SIMILARITY_THRESHOLD env var."""
+
+    def test_default_threshold_is_10(self):
+        """IMAGE_SIMILARITY_THRESHOLD defaults to 10 when env var is not set."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Remove the env var if it exists
+            os.environ.pop("IMAGE_SIMILARITY_THRESHOLD", None)
+            result = int(os.getenv("IMAGE_SIMILARITY_THRESHOLD", "10"))
+            self.assertEqual(result, 10)
+
+    def test_custom_threshold_from_env(self):
+        """IMAGE_SIMILARITY_THRESHOLD reads from environment when set."""
+        with patch.dict(os.environ, {"IMAGE_SIMILARITY_THRESHOLD": "15"}):
+            result = int(os.getenv("IMAGE_SIMILARITY_THRESHOLD", "10"))
+            self.assertEqual(result, 15)
+
+    def test_sender_passes_threshold_to_similarity_check(self):
+        """The sender passes IMAGE_SIMILARITY_THRESHOLD to are_images_similar()."""
+        from tg_bot.bot import _send_new_images_iteration, IMAGE_SIMILARITY_THRESHOLD
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            open(os.path.join(date_folder, "frame_001.jpg"), "w").close()
+
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=False) as mock_similar, \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Verify the threshold parameter was passed
+                if mock_similar.called:
+                    call_kwargs = mock_similar.call_args
+                    self.assertEqual(call_kwargs[1].get("threshold", IMAGE_SIMILARITY_THRESHOLD), IMAGE_SIMILARITY_THRESHOLD)
+
+
+class TgBotSendStatisticsTests(unittest.TestCase):
+    """Tests for send statistics counters and /admin display."""
+
+    def test_sent_count_increments_on_successful_send(self):
+        """_SENT_COUNT increments by 1 each time send_photo succeeds."""
+        import tg_bot.bot as bot_module
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            f.write(b"fake image data")
+            tmp_path = f.name
+
+        try:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.text = "OK"
+
+            before = bot_module._SENT_COUNT
+            with patch("tg_bot.bot.BOT_TOKEN", "test_token"), \
+                 patch("tg_bot.bot.CHAT_ID", "12345"), \
+                 patch("tg_bot.bot.requests.post", return_value=mock_response), \
+                 patch("tg_bot.bot.save_last_sent_file"), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot._LAST_SENT_TIMESTAMP", 0.0):
+                send_photo(tmp_path)
+                self.assertEqual(bot_module._SENT_COUNT, before + 1)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_sent_count_does_not_increment_on_failed_send(self):
+        """_SENT_COUNT does not change when send_photo fails."""
+        import tg_bot.bot as bot_module
+
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            f.write(b"fake image data")
+            tmp_path = f.name
+
+        try:
+            mock_response = MagicMock()
+            mock_response.status_code = 403
+            mock_response.text = "Forbidden"
+
+            before = bot_module._SENT_COUNT
+            with patch("tg_bot.bot.BOT_TOKEN", "test_token"), \
+                 patch("tg_bot.bot.CHAT_ID", "12345"), \
+                 patch("tg_bot.bot.requests.post", return_value=mock_response), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", None), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None):
+                send_photo(tmp_path)
+                self.assertEqual(bot_module._SENT_COUNT, before)
+        finally:
+            os.unlink(tmp_path)
+
+    def test_skipped_duplicate_count_increments_on_similarity_skip(self):
+        """_SKIPPED_DUPLICATE_COUNT increments when an image is skipped due to similarity (cooldown not expired)."""
+        import time
+        import tg_bot.bot as bot_module
+
+        with tempfile.TemporaryDirectory() as tmp:
+            date_folder = os.path.join(tmp, "2026-06-19")
+            os.makedirs(date_folder)
+            open(os.path.join(date_folder, "frame_001.jpg"), "w").close()
+            open(os.path.join(date_folder, "frame_002.jpg"), "w").close()
+
+            bot_module._SKIPPED_DUPLICATE_COUNT = 0
+
+            recent_timestamp = time.time() - 10  # Within cooldown
+            with patch("tg_bot.bot.OUTPUT_DIR", tmp), \
+                 patch("tg_bot.bot.are_images_similar", return_value=True), \
+                 patch("tg_bot.bot.send_photo", return_value=True), \
+                 patch("tg_bot.bot.LAST_SENT_FOLDER", None), \
+                 patch("tg_bot.bot.LAST_SENT_IMAGE", os.path.join(date_folder, "prev.jpg")), \
+                 patch("tg_bot.bot._LAST_SENT_TIMESTAMP", recent_timestamp), \
+                 patch("tg_bot.bot.cleanup_old_folders"):
+                _send_new_images_iteration()
+                # Both images are similar and cooldown NOT expired → skipped
+                self.assertGreaterEqual(bot_module._SKIPPED_DUPLICATE_COUNT, 1)
+
+    def test_admin_message_includes_send_statistics(self):
+        """_format_admin_message includes Sent, Skipped (similar), Skipped (non-kept) lines."""
+        import tg_bot.bot as bot_module
+        bot_module._SENT_COUNT = 42
+        bot_module._SKIPPED_DUPLICATE_COUNT = 10
+        bot_module._SKIPPED_NON_KEPT_COUNT = 5
+
+        try:
+            summary = {
+                "total_images": 100,
+                "kept_images": 50,
+                "total_objects_by_type": {"car": 20, "person": 5},
+                "missing_expected_objects": [],
+            }
+            text = _format_admin_message(summary, "2026-06-19", fresh=True)
+            self.assertIn("*Sent:* 42", text)
+            self.assertIn("*Skipped (similar):* 10", text)
+            self.assertIn("*Skipped (non-kept):* 5", text)
+        finally:
+            bot_module._SENT_COUNT = 0
+            bot_module._SKIPPED_DUPLICATE_COUNT = 0
+            bot_module._SKIPPED_NON_KEPT_COUNT = 0
+
+    def test_admin_message_shows_zero_statistics(self):
+        """_format_admin_message always shows statistics even when zero (fresh start signal)."""
+        import tg_bot.bot as bot_module
+        bot_module._SENT_COUNT = 0
+        bot_module._SKIPPED_DUPLICATE_COUNT = 0
+        bot_module._SKIPPED_NON_KEPT_COUNT = 0
+
+        try:
+            summary = {"total_images": 10, "kept_images": 5}
+            text = _format_admin_message(summary, "2026-06-19", fresh=True)
+            self.assertIn("*Sent:* 0", text)
+            self.assertIn("*Skipped (similar):* 0", text)
+            self.assertIn("*Skipped (non-kept):* 0", text)
+        finally:
+            bot_module._SENT_COUNT = 0
+            bot_module._SKIPPED_DUPLICATE_COUNT = 0
+            bot_module._SKIPPED_NON_KEPT_COUNT = 0
 
 
 if __name__ == "__main__":

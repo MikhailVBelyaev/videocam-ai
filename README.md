@@ -116,6 +116,7 @@ Environment variables (set in `tg_bot/.env`):
 - `TELEGRAM_ADMIN_CHAT_ID` — optional chat ID authorized for `/admin` (falls back to `TELEGRAM_CHAT_ID`)
 - `MAX_IMAGES_PER_ITERATION` — optional cap on images sent per 5-second tick (default: `5`)
 - `SEND_COOLDOWN_SECONDS` — optional cooldown after which the duplicate filter is bypassed (default: `300`)
+- `IMAGE_SIMILARITY_THRESHOLD` — optional perceptual hash distance threshold for skipping similar images (default: `10`)
 
 Commands:
 
@@ -164,6 +165,11 @@ The sender includes three production safeguards:
 - **Concurrency guard** — overlapping sender iterations are skipped so only one pass runs at a time.
 - **Per-iteration cap** — at most `MAX_IMAGES_PER_ITERATION` images are sent in a single tick; remaining images resume on the next tick.
 - **Cooldown bypass** — if no image has been sent for `SEND_COOLDOWN_SECONDS`, the next candidate is delivered even if it is perceptually similar to the last sent image.
+
+When a `kept/` triage subfolder exists, only those images are sent; others are
+skipped as non-kept. Images whose perceptual hash distance from the last sent
+image is ≤ `IMAGE_SIMILARITY_THRESHOLD` are also skipped as similar duplicates.
+The `/admin` command reports send statistics (sent, skipped similar, skipped non-kept).
 
 Full operating details, tuning guidance, JSON schema, and limitations are in:
 

@@ -4,15 +4,47 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-002 design for "Fix production Telegram image delivery: bot sends repeated
-static/latest" is complete and in `review_required`. Created
-`docs/TELEGRAM_REPEATED_STATIC_DESIGN.md` defining affected services, data flows,
-implementation approach (triage-aware image selection via `kept/` subfolder,
-configurable `IMAGE_SIMILARITY_THRESHOLD` default 10, send statistics counters
-in `/admin`), five key tradeoffs, risks, and validation plan. No source code
-changes; all 156 tests pass.
+TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated
+static/latest" is complete and in `review_required`. Modified `tg_bot/bot.py` to add
+`IMAGE_SIMILARITY_THRESHOLD` env var (default 10), `_kept_images_exist()` and
+`_get_image_list()` helpers for triage-aware image selection, send statistics counters
+(`_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT`), triage-aware
+`_send_new_images_iteration()` preferring `kept/` images, and send statistics in `/admin`.
+Added 17 new tests (4 classes). Updated `docs/TG_BOT_RUNBOOK.md` and `README.md`.
+Total 97 tests pass. `py_compile` clean.
 
-## New Review Items (TASK-002 repeated-static design)
+## New Review Items (TASK-003 repeated-static implementation)
+
+- Review `tg_bot/bot.py` diff for the triage-aware Telegram image delivery fix.
+  - Verify `IMAGE_SIMILARITY_THRESHOLD` env var (default 10) replaces hardcoded threshold=5.
+  - Verify `_kept_images_exist()` correctly checks for `kept/` subfolder presence.
+  - Verify `_get_image_list()` prefers `kept/` images and falls back to all images.
+  - Verify `_send_new_images_iteration()` uses triage-aware image selection, preferring
+    `kept/` images and skipping similar/duplicate images.
+  - Verify `_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT` counters
+    are incremented correctly.
+  - Verify `send_photo()` increments `_SENT_COUNT`.
+  - Verify `_format_admin_message()` includes send statistics (always visible).
+  - Verify existing concurrency guard, send cap, cooldown bypass, `/admin`, `/state`,
+    and startup behaviors are unchanged (no regression).
+  - Decide whether to accept, revise, or reject the implementation.
+
+- Review `tests/test_tg_bot.py` diff for 17 new focused tests (4 classes).
+  - Verify `TgBotKeptImageTests` (6 tests) covers `_kept_images_exist()` and `_get_image_list()`.
+  - Verify `TgBotTriageAwareSenderTests` (3 tests) covers kept/ preference, non-kept skip,
+    and threshold application.
+  - Verify `TgBotThresholdEnvTests` (3 tests) covers default, env var override, and invalid env var.
+  - Verify `TgBotSendStatisticsTests` (5 tests) covers counter increments, admin message
+    display, zero counts, and cumulative statistics.
+  - Decide whether to accept, revise, or reject the test coverage.
+
+- Review `docs/TG_BOT_RUNBOOK.md` and `README.md` diffs.
+  - Verify `IMAGE_SIMILARITY_THRESHOLD` env var is documented.
+  - Verify "Triage-aware Image Sending" section is accurate.
+  - Verify triage-aware paragraph in README describes the behavior correctly.
+  - Decide whether to accept, revise, or reject the documentation.
+
+## Prior Review Items (TASK-002 repeated-static design)
 
 - Review `docs/TELEGRAM_REPEATED_STATIC_DESIGN.md`.
   - Verify affected services, modules, data flows, and interfaces are accurate.
@@ -311,6 +343,19 @@ changes; all 156 tests pass.
   - Decide whether to accept, revise, or reject the documentation.
 
 ## Completed Increments (Implementation)
+
+- TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated
+  static/latest" completed on 2026-06-19.
+  - Modified `tg_bot/bot.py`: added `IMAGE_SIMILARITY_THRESHOLD` env var (default 10),
+    `_kept_images_exist()` and `_get_image_list()` helpers, triage-aware
+    `_send_new_images_iteration()` preferring `kept/` images, send statistics counters,
+    and `/admin` statistics display.
+  - Added 17 focused tests in `tests/test_tg_bot.py` (4 new classes:
+    `TgBotKeptImageTests`, `TgBotTriageAwareSenderTests`, `TgBotThresholdEnvTests`,
+    `TgBotSendStatisticsTests`). Total 97 tests pass.
+  - Updated `docs/TG_BOT_RUNBOOK.md` and `README.md`.
+  - `py_compile` clean.
+  - Status: `review_required`.
 
 - TASK-005 documentation for "Change /admin: add web server page with cars and"
   completed on 2026-06-19.

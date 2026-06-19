@@ -1,5 +1,33 @@
 # Development Log
 
+## 2026-06-19 (Implementation)
+
+- Completed TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated static/latest"
+  (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-003).
+  - Modified `tg_bot/bot.py`:
+    - Added `IMAGE_SIMILARITY_THRESHOLD` env var (default 10) replacing hardcoded threshold=5.
+    - Added `_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT` module-level
+      in-memory counters for send statistics.
+    - Added `_kept_images_exist()` helper to check for `kept/` subfolder presence.
+    - Added `_get_image_list()` helper to return `kept/` images with fallback to all images.
+    - Replaced `_send_new_images_iteration()` with triage-aware version preferring `kept/`
+      images and skipping similar/duplicate images using `IMAGE_SIMILARITY_THRESHOLD`.
+    - Incremented `_SENT_COUNT` in `send_photo()` for send statistics.
+    - Appended send statistics to `_format_admin_message()` (always visible in `/admin`).
+  - Added 17 focused tests in `tests/test_tg_bot.py` (4 new test classes):
+    - `TgBotKeptImageTests` (6 tests): `_kept_images_exist()` with kept/ present, absent,
+      and OSError; `_get_image_list()` preferring kept/ and falling back.
+    - `TgBotTriageAwareSenderTests` (3 tests): kept/ images preferred, non-kept skipped,
+      similarity threshold applied.
+    - `TgBotThresholdEnvTests` (3 tests): default threshold, env var override, invalid env var.
+    - `TgBotSendStatisticsTests` (5 tests): counter increments, admin message includes
+      statistics, zero counts on startup, statistics after multiple sends.
+  - Updated `docs/TG_BOT_RUNBOOK.md` with `IMAGE_SIMILARITY_THRESHOLD` env var and
+    "Triage-aware Image Sending" section.
+  - Updated `README.md` with `IMAGE_SIMILARITY_THRESHOLD` env var and triage-aware paragraph.
+  - Total 97 tests pass (including 17 new triage-aware tests). `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (Planning)
 
 - Completed TASK-002 design for "Fix production Telegram image delivery:

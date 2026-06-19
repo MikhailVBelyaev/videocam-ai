@@ -16,6 +16,7 @@ Configure these in `tg_bot/.env`:
 | `TELEGRAM_ADMIN_CHAT_ID` | No | `TELEGRAM_CHAT_ID` | Chat ID authorized for `/admin` and `/state` |
 | `MAX_IMAGES_PER_ITERATION` | No | `5` | Maximum images sent in one 5-second sender tick |
 | `SEND_COOLDOWN_SECONDS` | No | `300` | Seconds after which the duplicate filter is bypassed for the next candidate |
+| `IMAGE_SIMILARITY_THRESHOLD` | No | `10` | Perceptual hash distance threshold; images within this distance of the last sent image are skipped as duplicates |
 
 ## Image Sender Safeguards
 
@@ -52,6 +53,26 @@ is delivered even if it is perceptually similar to the last sent image.
 - Scope: bypass applies to **one candidate only**. After that send, the timestamp
   updates and normal similarity filtering resumes for the remainder of the iteration.
 - Purpose: prevents the bot from going silent when the scene is static
+
+## Triage-aware Image Sending
+
+When snapshot triage has been run, it writes kept images into a `kept/`
+subfolder inside each dated output folder (e.g. `output/2026-06-19/kept/`).
+The bot uses these triage results to decide which images to send:
+
+- **Prefer `kept/` images** — when a `kept/` subfolder exists, only images
+  listed in it are candidates for sending. Images that exist in the root
+  dated folder but not in `kept/` are skipped and counted as **non-kept**.
+- **Fallback to full folder** — when no `kept/` subfolder exists, all images
+  in the dated folder are candidates (unchanged behavior).
+- **Similar-image skipping** — candidates whose perceptual hash distance from
+  the last sent image is ≤ `IMAGE_SIMILARITY_THRESHOLD` are skipped and
+  counted as **similar duplicates**. Default threshold is 10; raise it to
+  allow more visual variation through, lower it to be stricter.
+- **Send statistics** — the `/admin` command appends a line showing:
+  `Sent: N | Skipped (similar): N | Skipped (non-kept): N`
+
+These counts reset on each bot process restart.
 
 ## Startup Behavior
 

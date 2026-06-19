@@ -4,13 +4,20 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
-- TASK-002 design for "Fix production Telegram image delivery: bot sends repeated
-  static/latest" is complete and in `review_required`. Created
-  `docs/TELEGRAM_REPEATED_STATIC_DESIGN.md` defining affected services, modules,
-  data flows, implementation approach (triage-aware image selection via `kept/`
-  subfolder, configurable `IMAGE_SIMILARITY_THRESHOLD` default 10, send statistics
-  counters in `/admin`), five key tradeoffs, risks, and validation plan.
-  No source code changes; all 156 tests pass; `py_compile` clean.
+- TASK-003 implementation for "Fix production Telegram image delivery: bot sends repeated
+  static/latest" is complete and in `review_required`. Modified `tg_bot/bot.py` to add
+  `IMAGE_SIMILARITY_THRESHOLD` env var (default 10), `_kept_images_exist()` and
+  `_get_image_list()` helpers for triage-aware image selection (preferring `kept/`
+  subfolder, falling back to all images), send statistics counters
+  (`_SENT_COUNT`, `_SKIPPED_DUPLICATE_COUNT`, `_SKIPPED_NON_KEPT_COUNT`), triage-aware
+  `_send_new_images_iteration()` skipping similar/duplicate images, and send statistics
+  appended to `/admin`. Added 17 focused tests in `tests/test_tg_bot.py` (4 new test
+  classes: `TgBotKeptImageTests`, `TgBotTriageAwareSenderTests`,
+  `TgBotThresholdEnvTests`, `TgBotSendStatisticsTests`). Updated
+  `docs/TG_BOT_RUNBOOK.md` with `IMAGE_SIMILARITY_THRESHOLD` env var and "Triage-aware
+  Image Sending" section. Updated `README.md` with `IMAGE_SIMILARITY_THRESHOLD` env var
+  and triage-aware paragraph. Total 97 tests pass (including 17 new triage-aware tests).
+  `py_compile` clean.
 
 ## Prior Update
 

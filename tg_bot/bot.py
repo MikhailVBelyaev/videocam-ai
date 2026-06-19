@@ -54,8 +54,12 @@ VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
 
 MAX_IMAGES_PER_ITERATION = int(os.getenv("MAX_IMAGES_PER_ITERATION", "5"))
 SEND_COOLDOWN_SECONDS = int(os.getenv("SEND_COOLDOWN_SECONDS", "300"))
+IMAGE_SIMILARITY_THRESHOLD = int(os.getenv("IMAGE_SIMILARITY_THRESHOLD", "10"))
 _SENDER_LOCK = asyncio.Lock()
 _LAST_SENT_TIMESTAMP = 0.0
+_SENT_COUNT = 0
+_SKIPPED_DUPLICATE_COUNT = 0
+_SKIPPED_NON_KEPT_COUNT = 0
 
 
 def cleanup_old_folders():
@@ -140,7 +144,7 @@ def _initialize_startup_state():
 
 
 def send_photo(file_path: str):
-    global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _LAST_SENT_TIMESTAMP
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _LAST_SENT_TIMESTAMP, _SENT_COUNT
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     with open(file_path, "rb") as photo:
         res = requests.post(url, data={"chat_id": CHAT_ID}, files={"photo": photo})
@@ -152,6 +156,7 @@ def send_photo(file_path: str):
         LAST_SENT_IMAGE = file_path
         LAST_SENT_FOLDER = folder
         _LAST_SENT_TIMESTAMP = time.time()
+        _SENT_COUNT += 1
         return True
     else:
         logger.error(f"⚠️ Failed to send {file_path}: {res.text}")
@@ -321,6 +326,13 @@ def _format_admin_message(summary: dict, run_date: str | None, fresh: bool) -> s
         lines.append("_Live output summary; no triage report found._")
     if missing_count:
         lines.append(f"*Missing expected:* {missing_count} frames")
+    # Send statistics counters
+    lines.extend([
+        "",
+        f"*Sent:* {_SENT_COUNT}",
+        f"*Skipped (similar):* {_SKIPPED_DUPLICATE_COUNT}",
+        f"*Skipped (non-kept):* {_SKIPPED_NON_KEPT_COUNT}",
+    ])
     return "\n".join(lines)
 
 
@@ -469,9 +481,51 @@ LAST_SENT_IMAGE = None
 LAST_SENT_FOLDER = None
 
 
+def _kept_images_exist(folder_path: str) -> bool:
+    """Return True if the kept/ subfolder exists and contains at least one image file."""
+    kept_path = os.path.join(folder_path, "kept")
+    if not os.path.isdir(kept_path):
+        return False
+    try:
+        for f in os.listdir(kept_path):
+            if f.lower().endswith(IMAGE_EXTENSIONS) and not f.startswith("."):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def _get_image_list(folder_path: str) -> list[str]:
+    """Return sorted image filenames. Prefer kept/ subfolder when it exists and has images."""
+    if _kept_images_exist(folder_path):
+        kept_path = os.path.join(folder_path, "kept")
+        try:
+            files = [
+                f for f in os.listdir(kept_path)
+                if f.lower().endswith(IMAGE_EXTENSIONS)
+                and not f.startswith(".")
+                and os.path.isfile(os.path.join(kept_path, f))
+            ]
+            return sorted(files)
+        except OSError:
+            pass
+
+    # Fallback: all images in the date folder root
+    try:
+        files = [
+            f for f in os.listdir(folder_path)
+            if f.lower().endswith(IMAGE_EXTENSIONS)
+            and not f.startswith(".")
+            and os.path.isfile(os.path.join(folder_path, f))
+        ]
+        return sorted(files)
+    except OSError:
+        return []
+
+
 def _send_new_images_iteration():
-    """One pass of the original image-sending loop (no sleep)."""
-    global LAST_SENT_IMAGE, LAST_SENT_FOLDER
+    """One pass of the image-sending loop. Prefers kept/ images when available."""
+    global LAST_SENT_IMAGE, LAST_SENT_FOLDER, _SKIPPED_DUPLICATE_COUNT, _SKIPPED_NON_KEPT_COUNT
     try:
         # List subfolders in OUTPUT_DIR with valid date names
         subfolders = []
@@ -496,15 +550,31 @@ def _send_new_images_iteration():
         current_folder = subfolders[folder_index]
         folder_path = os.path.join(OUTPUT_DIR, current_folder)
 
-        # List image files in the current folder
-        image_files = []
-        for file in os.listdir(folder_path):
-            if file.startswith('.'):
-                continue
-            if not file.lower().endswith(('.jpg', '.jpeg', '.png')):
-                continue
-            image_files.append(file)
-        image_files.sort()
+        # Triage-aware image selection: prefer kept/ subfolder when available
+        is_kept_mode = _kept_images_exist(folder_path)
+        image_files = _get_image_list(folder_path)
+
+        # When in kept/ mode, count non-kept images skipped
+        if is_kept_mode:
+            try:
+                all_files = [
+                    f for f in os.listdir(folder_path)
+                    if f.lower().endswith(IMAGE_EXTENSIONS)
+                    and not f.startswith(".")
+                    and os.path.isfile(os.path.join(folder_path, f))
+                ]
+                kept_set = set(image_files)
+                for f in all_files:
+                    if f not in kept_set:
+                        _SKIPPED_NON_KEPT_COUNT += 1
+            except OSError:
+                pass
+
+        # Determine path prefix for kept/ images
+        if is_kept_mode:
+            image_base_path = os.path.join(folder_path, "kept")
+        else:
+            image_base_path = folder_path
 
         start_index = 0
         if LAST_SENT_IMAGE is not None and LAST_SENT_FOLDER == current_folder:
@@ -516,14 +586,15 @@ def _send_new_images_iteration():
 
         sent_count = 0
         for filename in image_files[start_index:]:
-            path = os.path.join(folder_path, filename)
+            path = os.path.join(image_base_path, filename)
             if os.path.isfile(path):
-                if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path):
+                if LAST_SENT_IMAGE is not None and are_images_similar(LAST_SENT_IMAGE, path, threshold=IMAGE_SIMILARITY_THRESHOLD):
                     cooldown_expired = (time.time() - _LAST_SENT_TIMESTAMP) > SEND_COOLDOWN_SECONDS
                     if cooldown_expired:
                         logger.info(f"Cooldown expired; sending {filename} despite similarity")
                     else:
                         logger.info(f"Skipped {filename} (too similar to last sent image)")
+                        _SKIPPED_DUPLICATE_COUNT += 1
                         continue
                 if send_photo(path):
                     sent_count += 1
