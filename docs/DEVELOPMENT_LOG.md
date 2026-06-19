@@ -14,6 +14,22 @@
   - No source code changes. All 204 tests pass. `py_compile` clean.
   - Status: `review_required`.
 
+- Completed TASK-002 design for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+  (Job ID: 2026-06-19_190332_videocam-ai-fix-tg-bot-still-stuck-on-old-last-sent-folder-a-task-002).
+  - Created `docs/TG_BOT_FOLDER_ADVANCE_DESIGN.md` documenting affected services
+    (`tg_bot/bot.py` primary), modules (`_send_new_images_iteration()`, `_format_admin_message()`),
+    data flows (folder advancement block after zero-send iteration), and interfaces
+    (`.last_sent_file` format `folder/\n`, `/admin` extended fields).
+  - Documented implementation approach: additive changes only — folder advancement
+    when `sent_count == 0` and `current_folder != newest_folder`, clear
+    `LAST_SENT_IMAGE`, persist via `save_last_sent_file()`, latest-folder boundary
+    guard, and stuck-state visibility in `/admin`.
+  - Documented key tradeoffs: `sent_count == 0` trigger vs. stale-only/unconditional
+    triggers; next-folder vs. jump-to-newest step size; `folder/\n` state format
+    vs. new file contract; direct read vs. reuse for `/admin` state file display.
+  - No source code changes. All 204 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
 ## 2026-06-19 (QA)
 
 - Completed TASK-004 QA validation for "Ignore old Telegram image backlog and process fresh live"

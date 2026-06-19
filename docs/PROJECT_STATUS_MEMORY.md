@@ -4,9 +4,24 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-002 design for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+  is complete and in `review_required`. Created `docs/TG_BOT_FOLDER_ADVANCE_DESIGN.md`
+  documenting affected services (`tg_bot/bot.py` primary), modules
+  (`_send_new_images_iteration()`, `_format_admin_message()`), data flows (folder
+  advancement block after zero-send iteration, `/admin` extended fields), and
+  interfaces (`.last_sent_file` format `folder/\n`). Documented implementation
+  approach (additive changes only: folder advancement when `sent_count == 0` and
+  current folder is not latest, latest-folder boundary guard, `/admin` stuck-state
+  visibility, state file persistence). Documented key tradeoffs (`sent_count == 0`
+  trigger vs. alternatives, next-folder vs. jump-to-newest step size, state file
+  format vs. new contract, direct read vs. reuse for `/admin` state file display).
+  No source code changes. All 204 tests pass. `py_compile` clean.
+
+## Prior Update
+
 - TASK-001 scope definition for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
   is complete and in `review_required`. Created `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md` defining
-  minimum deliverable: folder advancement logic in `_send_new_images_iteration()` (advance to
+  minimum deliverable (folder advancement logic in `_send_new_images_iteration()` (advance to
   next dated folder when `sent_count == 0` and current folder is not latest), latest-folder
   boundary guard, `/admin` stuck-state visibility fields (watched folder, newest folder,
   state file content, status indicator), focused unit tests, and README/runbook updates.

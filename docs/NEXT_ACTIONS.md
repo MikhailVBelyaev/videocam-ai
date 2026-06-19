@@ -4,23 +4,38 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-001 scope definition for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
-is complete and in `review_required`. Created `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md` defining
-minimum deliverable (folder advancement logic, latest-folder boundary guard, `/admin` stuck-state
-visibility), measurable acceptance criteria, and explicit exclusions. No source code changes.
-All 204 tests pass. `py_compile` clean.
+TASK-002 design for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+is complete and in `review_required`. Created `docs/TG_BOT_FOLDER_ADVANCE_DESIGN.md`
+documenting affected services, modules, data flows, interfaces, implementation approach,
+and key tradeoffs. No source code changes. All 204 tests pass. `py_compile` clean.
 
-## New Review Items (TASK-001 folder-advancement scope)
+## New Review Items (TASK-002 folder-advancement design)
 
-- Review `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md`.
-  - Verify minimum deliverable covers: folder advancement when `sent_count == 0` and current
-    folder is not latest, latest-folder boundary guard, `/admin` stuck-state fields
-    (watched folder, newest folder, state file content, status indicator).
-  - Verify acceptance criteria are measurable and exclusions are explicit.
-  - Verify no scope expansion into triage pipeline, web viewer, camera capture, max-age filter,
-    similarity threshold, cooldown behavior, or Docker infrastructure.
-  - Decide whether to accept, revise, or reject the scope.
-  - If accepted, prepare a TASK-002 design job.
+- Review `docs/TG_BOT_FOLDER_ADVANCE_DESIGN.md`.
+  - Verify affected services, modules, data flows, and interfaces are accurate.
+  - Verify implementation approach covers: folder advancement when `sent_count == 0`
+    and current folder is not latest, latest-folder boundary guard, `/admin`
+    stuck-state fields (watched folder, newest folder, state file content, status
+    indicator), and state file persistence on advancement.
+  - Verify key tradeoffs are documented with rationale (`sent_count == 0` trigger
+    vs. alternatives, next-folder vs. jump-to-newest step size, `folder/\n` format
+    vs. new file contract, direct read vs. reuse for `/admin` state file display).
+  - Verify risks and mitigations are adequate (overlap with pending reviews,
+    advancing past similarity-skipped images, multi-folder rapid advancement,
+    state file format parsing, write races).
+  - Verify no scope expansion into triage pipeline, web viewer, camera capture,
+    max-age filter, similarity threshold, cooldown behavior, startup initialization,
+    or Docker infrastructure.
+  - Decide whether to accept, revise, or reject the design.
+  - If accepted, prepare a TASK-003 implementation job.
+
+## Completed Review Items (TASK-001 folder-advancement scope)
+
+- Scope doc `docs/TG_BOT_FOLDER_ADVANCE_SCOPE.md` reviewed and in `review_required`.
+  - Minimum deliverable covers folder advancement logic, latest-folder boundary guard,
+    `/admin` stuck-state visibility, focused unit tests, and README/runbook updates.
+  - Acceptance criteria are measurable and exclusions are explicit.
+  - Status: `review_required`; TASK-002 design prepared and completed.
 
 ## Prior Review Items (TASK-005 fresh-first documentation)
 
