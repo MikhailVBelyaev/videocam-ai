@@ -62,6 +62,20 @@
 
 ## 2026-06-19 (Planning)
 
+- Completed TASK-001 scope definition for "Ignore old Telegram image backlog and process fresh live"
+  (Job ID: 2026-06-19_172411_videocam-ai-ignore-old-telegram-image-backlog-and-process-fr-task-001).
+  - Created `docs/TELEGRAM_FRESH_FIRST_SCOPE.md` defining minimum deliverable:
+    newest-first processing of remaining unsent images (stable cursor via ascending
+    start_index, then mtime-descending sub-list sort), configurable max-age staleness
+    filter via `MAX_IMAGE_AGE_SECONDS` env var (default 3600), extended `/admin`
+    counters and timestamps (stale skipped, backlog size, latest capture time,
+    latest sent time, last skip reason), focused unit tests, and README/runbook updates.
+  - Recorded measurable acceptance criteria and explicit exclusions.
+  - No source code changes. All 183 tests pass. `py_compile` clean.
+  - Status: `review_required`.
+
+## 2026-06-19 (Planning)
+
 - Completed TASK-002 design for "Fix production Telegram image delivery:
   bot sends repeated static/latest"
   (Job ID: 2026-06-19_163018_videocam-ai-fix-production-telegram-image-delivery-bot-sends-task-002).

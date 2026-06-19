@@ -4,6 +4,26 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
+TASK-001 scope definition for "Ignore old Telegram image backlog and process fresh live"
+is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_SCOPE.md`
+defining newest-first processing, max-age staleness filter, and extended `/admin` counters.
+
+## New Review Items (TASK-001 fresh-first scope)
+
+- Review `docs/TELEGRAM_FRESH_FIRST_SCOPE.md`.
+  - Verify minimum deliverable covers: newest-first processing of remaining unsent images
+    (stable cursor via ascending start_index, then mtime-descending sub-list sort),
+    configurable max-age staleness filter (`MAX_IMAGE_AGE_SECONDS`, default 3600),
+    and extended `/admin` counters/timestamps (stale skipped, backlog size, latest
+    capture time, latest sent time, last skip reason).
+  - Verify acceptance criteria are measurable and exclusions are explicit.
+  - Verify no scope expansion into triage pipeline, web viewer, camera capture,
+    persistent statistics, or Docker infrastructure.
+  - Decide whether to accept, revise, or reject the scope.
+  - If accepted, prepare a TASK-002 design job.
+
+## Prior Review Items (TASK-005 repeated-static documentation)
+
 TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated
 static/latest" is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md`
 validation counts to 103 tg_bot tests / 183 total, added troubleshooting entries for

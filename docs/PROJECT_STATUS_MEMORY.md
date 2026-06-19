@@ -4,10 +4,19 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
-- TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated static/latest"
-  is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts to
+- TASK-001 scope definition for "Ignore old Telegram image backlog and process fresh live"
+  is complete and in `review_required`. Created `docs/TELEGRAM_FRESH_FIRST_SCOPE.md`
+  defining minimum deliverable (newest-first processing of remaining unsent images,
+  configurable max-age staleness filter via `MAX_IMAGE_AGE_SECONDS` default 3600,
+  extended `/admin` counters and timestamps), measurable acceptance criteria, and
+  explicit exclusions. No source code changes; all 183 tests pass; `py_compile` clean.
+
+## Prior Update
+
+- TASK-005 documentation for "Fix production Telegram image delivery: bot sends repeated
+  static/latest" is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts to
   103 tg_bot tests / 183 total tests, added troubleshooting entries for `IMAGE_SIMILARITY_THRESHOLD`
-  misconfiguration (too high, too low) and non-kept counter behavior. Verified `README.md` consistency
+  misconfiguration and non-kept counter behavior. Verified `README.md` consistency
   with `tg_bot/bot.py` implementation. Updated `docs/PROJECT_STATUS_MEMORY.md`,
   `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml`.
   All 183 tests pass (103 tg_bot + 52 snapshot_triage + 28 web_viewer). `py_compile` clean.
