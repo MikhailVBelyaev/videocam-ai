@@ -4,6 +4,18 @@ Last updated: 2026-06-19
 
 ## Latest Update
 
+- TASK-005 documentation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
+  is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts
+  from 132 to 139 tg_bot tests and 212 to 219 total tests. Verified `README.md` Telegram bot
+  section consistency with `tg_bot/bot.py` implementation: folder advancement behavior,
+  stuck-state `/admin` fields (Watched folder, Newest folder, State file, Status), boundary
+  guard, and troubleshooting entries are accurate. Updated `docs/PROJECT_STATUS_MEMORY.md`,
+  `docs/NEXT_ACTIONS.md`, `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml`.
+  No source code changes. All 219 tests pass (139 tg_bot + 52 snapshot_triage + 28 web_viewer).
+  `py_compile` clean.
+
+## Prior Update
+
 - TASK-004 QA validation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
   is complete and in `review_required`. Added 7 focused QA tests in `tests/test_tg_bot.py`
   (`TgBotFolderAdvanceQATests`): state file write failure (OSError leaves module globals correct

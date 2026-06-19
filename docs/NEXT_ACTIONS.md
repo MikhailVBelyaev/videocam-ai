@@ -4,13 +4,39 @@ Last updated: 2026-06-19
 
 ## Current Priority
 
-TASK-004 QA validation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after
-fresh-first" is complete and in `review_required`. Added 7 focused QA tests in
-`tests/test_tg_bot.py` (`TgBotFolderAdvanceQATests`). All 219 tests pass. `py_compile` clean.
+TASK-005 documentation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after
+fresh-first" is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md`
+validation counts (139 tg_bot tests, 219 total). Verified `README.md` consistency
+with `tg_bot/bot.py`. Updated project status docs. No source code changes.
+All 219 tests pass. `py_compile` clean.
 
-## New Review Items (TASK-004 folder-advancement QA)
+## New Review Items (TASK-005 folder-advancement documentation)
 
-- Review `tests/test_tg_bot.py` diff for 7 new QA tests (`TgBotFolderAdvanceQATests`).
+- Review `docs/TG_BOT_RUNBOOK.md` diff.
+  - Verify validation counts updated from 132 to 139 tg_bot tests and 212 to 219 total.
+  - Verify "Folder Advancement" section accurately describes the trigger
+    (`sent_count == 0` and current folder is not latest), step size (next folder),
+    boundary guard (stay put on newest), state persistence (`new_folder/\n`), and
+    purpose (prevent stuck bot on stale folders).
+  - Verify `/admin` description includes Watched folder, Newest folder, State file,
+    and Status fields.
+  - Verify troubleshooting entry for "Bot stuck on old folder" is accurate.
+  - Decide whether to accept, revise, or reject the documentation.
+
+- Review `README.md` Telegram bot section for consistency with `tg_bot/bot.py`.
+  - Verify folder advancement paragraph is accurate.
+  - Verify stuck-state fields in `/admin` are described correctly.
+  - Verify env var list matches implementation.
+  - Decide whether to accept, revise, or reject.
+
+- Review `docs/PROJECT_STATUS_MEMORY.md`, `docs/NEXT_ACTIONS.md`,
+  `docs/DEVELOPMENT_LOG.md`, and `docs/PROJECT_MANAGER.yaml` diffs.
+  - Verify TASK-005 is recorded accurately and counts are correct (139 tg_bot, 219 total).
+  - Decide whether to accept, revise, or reject the project status updates.
+
+## Completed Review Items (TASK-004 folder-advancement QA)
+
+- Reviewed `tests/test_tg_bot.py` diff for 7 new QA tests (`TgBotFolderAdvanceQATests`).
   - `test_advance_state_file_write_failure`: module globals advance even when state file write raises OSError.
   - `test_no_dated_folders_no_advancement`: when `_get_latest_run_date()` returns None, LAST_SENT_FOLDER is unchanged.
   - `test_send_photo_failure_triggers_advancement`: send_photo returning False for all images leaves sent_count at 0, triggering advancement.
@@ -19,11 +45,11 @@ fresh-first" is complete and in `review_required`. Added 7 focused QA tests in
   - `test_admin_state_file_unreadable`: `_format_admin_message` shows "unreadable" when state file read raises OSError.
   - `test_last_sent_folder_deleted_between_iterations`: when LAST_SENT_FOLDER is absent from disk folders, bot processes the latest folder as fallback.
   - Notable finding: state file write failure (OSError) does not prevent in-memory advancement — module globals update correctly, but persistence is lost.
-  - Decide whether to accept, revise, or reject the QA tests.
+  - Status: `review_required`.
 
-## New Review Items (TASK-003 folder-advancement implementation)
+## Completed Review Items (TASK-003 folder-advancement implementation)
 
-- Review `tg_bot/bot.py` diff for the folder advancement fix.
+- Reviewed `tg_bot/bot.py` diff for the folder advancement fix.
   - Verify folder advancement block runs after send loop and before `cleanup_old_folders()`.
   - Verify `sent_count == 0` and `current_folder != newest_folder` trigger.
   - Verify latest-folder boundary guard (stay put when current == newest).
@@ -34,22 +60,23 @@ fresh-first" is complete and in `review_required`. Added 7 focused QA tests in
   - Verify existing concurrency guard, send cap, cooldown bypass, triage-aware selection,
     startup initialization, max-age filter, newest-first ordering, `/state`, and
     image-sending behavior are unchanged (no regression).
-  - Decide whether to accept, revise, or reject the implementation.
+  - Status: `review_required`.
 
-- Review `tests/test_tg_bot.py` diff for 8 new focused tests (`TgBotFolderAdvanceTests`).
-  - Verify `test_old_folder_all_stale_advances`
-  - Verify `test_old_folder_all_similar_advances`
-  - Verify `test_old_folder_fully_sent_advances`
-  - Verify `test_latest_folder_zero_sends_stays_put`
-  - Verify `test_normal_send_in_old_folder_no_advance`
-  - Verify `test_multi_folder_rapid_advancement`
-  - Verify `test_admin_stuck_state_fields`
-  - Verify `test_state_file_persistence_on_advancement`
-  - Decide whether to accept, revise, or reject the test coverage.
+- Reviewed `tests/test_tg_bot.py` diff for 8 new focused tests (`TgBotFolderAdvanceTests`).
+  - `test_old_folder_all_stale_advances`
+  - `test_old_folder_all_similar_advances`
+  - `test_old_folder_fully_sent_advances`
+  - `test_latest_folder_zero_sends_stays_put`
+  - `test_normal_send_in_old_folder_no_advance`
+  - `test_multi_folder_rapid_advancement`
+  - `test_admin_stuck_state_fields`
+  - `test_state_file_persistence_on_advancement`
+  - Status: `review_required`.
 
-- Review `README.md` diff for folder advancement description and new `/admin` fields.
-- Review `docs/TG_BOT_RUNBOOK.md` diff for "Folder Advancement" section, updated `/admin`
-  description, validation counts (132 tg_bot, 212 total), and troubleshooting entry.
+- Reviewed `README.md` diff for folder advancement description and new `/admin` fields.
+- Reviewed `docs/TG_BOT_RUNBOOK.md` diff for "Folder Advancement" section, updated `/admin`
+  description, validation counts, and troubleshooting entry.
+  - Status: `review_required`.
 
 ## Completed Review Items (TASK-002 folder-advancement design)
 
