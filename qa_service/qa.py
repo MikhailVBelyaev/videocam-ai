@@ -1,5 +1,6 @@
 import cv2
 import os
+import re
 import sys
 import time
 import json
@@ -35,10 +36,15 @@ BLUR_THRESHOLD = 30.0
 GRADIENT_THRESHOLD = 5.0
 BRIGHTNESS_MIN = 15.0
 BRIGHTNESS_MAX = 245.0
-SIMILARITY_THRESHOLD = 8      # perceptual hash distance; below = duplicate
+# Per-ID similarity: frames of the same tracked object that look identical
+# (Δhash ≤ this) are "no change" — reported as WARN, not FAIL
+SAME_ID_DUP_THRESHOLD = 5
 CONF_THRESHOLD = 0.35         # lower than production — we want to verify presence
 
 TARGET_CLASSES = {"car", "truck", "bus", "person", "motorbike", "bicycle"}
+
+# Matches filenames like frame_2026-06-21 14:00:41_id9257_vehicle.jpg
+_ID_RE = re.compile(r"_id(\d+)_")
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -47,7 +53,8 @@ results_buffer: deque = deque(maxlen=MAX_RESULTS)
 results_lock = threading.Lock()
 processed_count = 0
 pass_count = 0
-last_phash = None
+# Per-tracking-ID last phash — so duplicate check is meaningful per vehicle
+_id_last_hash: dict = {}
 
 app = Flask(__name__)
 
@@ -79,8 +86,6 @@ def _phash(img: np.ndarray) -> imagehash.ImageHash:
 # ---------------------------------------------------------------------------
 
 def analyze(img_path: Path, model: YOLO) -> dict:
-    global last_phash
-
     img = cv2.imread(str(img_path))
     if img is None:
         return {
@@ -91,16 +96,25 @@ def analyze(img_path: Path, model: YOLO) -> dict:
             "issues": ["unreadable image"],
             "blur": 0.0, "gradient": 0.0, "brightness": 0.0,
             "hash_distance": None, "is_different": None, "detections": [],
+            "tracking_id": None,
         }
 
     blur = _blur_score(img)
     gradient = _gradient_score(img)
     brightness = _brightness(img)
 
+    # Per-tracking-ID similarity — compare this capture against the last
+    # capture of the SAME object, not the globally previous frame.
+    # A stationary parked car will always look the same between cooldown
+    # cycles; that's expected, not an error.
+    m = _ID_RE.search(img_path.name)
+    tracking_id = int(m.group(1)) if m else None
+
     ph = _phash(img)
-    hash_distance = int(ph - last_phash) if last_phash is not None else None
-    is_different = (hash_distance is None) or (hash_distance > SIMILARITY_THRESHOLD)
-    last_phash = ph
+    prev_hash = _id_last_hash.get(tracking_id) if tracking_id is not None else None
+    hash_distance = int(ph - prev_hash) if prev_hash is not None else None
+    no_change = (hash_distance is not None) and (hash_distance <= SAME_ID_DUP_THRESHOLD)
+    _id_last_hash[tracking_id] = ph
 
     # YOLO verification — did the system actually capture a real object?
     yolo_results = model.predict(img, verbose=False, device=0, conf=CONF_THRESHOLD)
@@ -113,7 +127,9 @@ def analyze(img_path: Path, model: YOLO) -> dict:
 
     has_object = len(detections) > 0
 
-    # Determine issues
+    # FAIL = image quality problem (the system failed to capture properly)
+    # WARN = image OK but same vehicle hasn't moved (informational)
+    # PASS = good quality, object visible, vehicle has moved / first capture
     issues = []
     if blur < BLUR_THRESHOLD:
         issues.append(f"blurry (blur={blur:.0f})")
@@ -125,15 +141,17 @@ def analyze(img_path: Path, model: YOLO) -> dict:
         issues.append(f"overexposed (brightness={brightness:.0f})")
     if not has_object:
         issues.append("no target object visible")
-    if not is_different:
-        issues.append(f"duplicate frame (Δhash={hash_distance})")
+    if no_change:
+        issues.append(f"no change since last capture (Δhash={hash_distance})")
 
-    if len(issues) == 0:
-        status = "PASS"
-    elif not has_object or blur < BLUR_THRESHOLD or not is_different:
+    quality_fail = not has_object or blur < BLUR_THRESHOLD or gradient < GRADIENT_THRESHOLD
+
+    if quality_fail:
         status = "FAIL"
-    else:
+    elif issues:
         status = "WARN"
+    else:
+        status = "PASS"
 
     return {
         "filename": img_path.name,
@@ -145,7 +163,8 @@ def analyze(img_path: Path, model: YOLO) -> dict:
         "gradient": round(gradient, 1),
         "brightness": round(brightness, 1),
         "hash_distance": hash_distance,
-        "is_different": is_different,
+        "is_different": not no_change,
+        "tracking_id": tracking_id,
         "detections": detections,
     }
 
@@ -368,10 +387,10 @@ function gradCls(v)  { return v >= 5  ? 'ok' : 'bad'; }
 function brightCls(v){ return v >= 15 && v <= 245 ? 'ok' : v < 15 ? 'bad' : 'warn'; }
 
 function diffHtml(r) {
-  if (r.hash_distance === null) return '<span style="color:#6b7280">first</span>';
+  if (r.hash_distance === null) return '<span style="color:#6b7280">first capture</span>';
   return r.is_different
-    ? `<span class="diff-ok">✓ diff (Δ${r.hash_distance})</span>`
-    : `<span class="diff-no">✗ dup (Δ${r.hash_distance})</span>`;
+    ? `<span class="diff-ok">✓ moved (Δ${r.hash_distance})</span>`
+    : `<span style="color:#fb923c">~ stationary (Δ${r.hash_distance})</span>`;
 }
 
 function card(r, isNew) {
@@ -390,7 +409,7 @@ function card(r, isNew) {
     onclick="document.getElementById('lb-img').src=this.src;document.getElementById('lb').classList.add('open')">
   <div class="card-body">
     <div class="row1">
-      <div class="fname" title="${r.filename}">${r.filename.replace(/_debug/,'')}</div>
+      <div class="fname" title="${r.filename}">${r.tracking_id ? `ID ${r.tracking_id} · ` : ''}${r.filename.replace(/_debug/,'')}</div>
       <div class="ts">${r.timestamp.replace('T',' ')}</div>
     </div>
     <span class="badge ${r.status}">${r.status}</span>
