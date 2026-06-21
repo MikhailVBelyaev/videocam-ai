@@ -28,7 +28,7 @@ logging.getLogger("ultralytics").setLevel(logging.WARNING)
 # Config
 # ---------------------------------------------------------------------------
 OUTPUT_DIR = Path("/app/output")
-DB_PATH = OUTPUT_DIR / "qa_stats.db"
+DB_PATH = Path("/app/data/qa_stats.db")
 POLL_INTERVAL = 2.0
 PRELOAD_RECENT = 50       # seed with files not yet in DB on first run
 
@@ -49,7 +49,7 @@ _ID_RE = re.compile(r"_id(\d+)_")
 # ---------------------------------------------------------------------------
 
 def _init_db() -> sqlite3.Connection:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
