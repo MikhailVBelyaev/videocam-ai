@@ -1,5 +1,58 @@
 # Development Log
 
+## 2026-06-21 — Capture quality fixes + QA service
+
+### Root cause analysis and capture fixes
+
+Analysed two production problems using Opus 4.8:
+- **Problem 1 (garbage frames):** single-threaded capture loop caused FIFO buffer lag —
+  frames processed by YOLO were already stale (sometimes seconds old). Fixed with a
+  dedicated reader thread storing only the latest frame in a single-slot buffer.
+- **Problem 2 (composite/blended frames):** H.264 inter-frame corruption from UDP RTSP
+  packet loss. Fixed by switching RTSP transport to TCP.
+
+Changes in `cams_grabber/main_ssh.py`:
+- Reader daemon thread: continuous `cap.read()`, single-slot `_latest_slot` with lock
+- RTSP opened with `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp` and `CAP_PROP_BUFFERSIZE=1`
+- Exponential backoff reconnect on stream loss: 1 s → 30 s cap
+- Pre-YOLO quality gate: Laplacian variance ≥ 30 AND gradient magnitude variance ≥ 5
+- Production model upgraded from yolov8n → yolov8s (more accurate, downloaded at build time)
+- Persistence requirement: 4 consecutive frames before saving (`MIN_PERSIST_FRAMES = 4`)
+- Cooldown renamed from frames to seconds (`COOLDOWN_SECONDS = 20`)
+- Save raw frame as primary + YOLO-annotated `_debug.jpg` as separate file
+
+### QA service
+
+New `qa_service/` Docker service:
+- `qa_service/qa.py`: watcher thread + Flask SPA, GPU 2 (`CUDA_VISIBLE_DEVICES=2`, `CUDA_DEVICE_ORDER=PCI_BUS_ID`)
+- `qa_service/Dockerfile`: nvidia/cuda:11.8.0 base, torch 2.2.2+cu118, numpy<2 pin
+- `qa_service/requirements.txt`: flask, ultralytics, opencv-python, numpy<2, imagehash, Pillow
+- Added to `docker-compose.yml` on port 8083
+
+Per-frame analysis:
+- Blur (Laplacian), gradient (gradient magnitude), brightness (mean grayscale)
+- Per-tracking-ID perceptual hash (imagehash) to detect stationary recaptures vs. genuine movement
+- YOLOv8n re-detection at conf ≥ 0.35 to independently verify object presence
+- PASS / WARN / FAIL classification
+
+Dashboard: two-tab SPA
+- Dashboard tab: 5 time-window cards (10 min / 1 h / 6 h / 12 h / 24 h) + stats table
+- Gallery tab: 5 images/page, prev/next, jump-to-page, lightbox, auto-refresh page 1
+
+Issues fixed during deployment:
+- `numpy<2` pin added (numpy 2.2.6 + torch 2.2.2+cu118 → `_ARRAY_API not found`)
+- Per-ID hash tracking (was global, causing all stationary vehicles to FAIL as "duplicates")
+- FAIL logic: only quality problems are FAIL; stationary vehicles are WARN (expected)
+- Stale container conflict on rebuild: `docker rm -f qa_service` before recreate
+
+### Documentation
+
+- `CLAUDE.md` created: full project guidance for Claude Code sessions
+- `docs/ARCHITECTURE.md` created: system overview, service breakdown, GPU assignments, frame lifecycle
+- `docs/QA_SERVICE_RUNBOOK.md` created: dashboard guide, status meanings, troubleshooting
+- `docs/PROJECT_STATUS_MEMORY.md` updated to 2026-06-21
+- `docs/NEXT_ACTIONS.md` updated with future improvement ideas
+
 ## 2026-06-19 (Docs)
 
 - Completed TASK-005 documentation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"

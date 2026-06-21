@@ -1,8 +1,43 @@
 # Project Status Memory
 
-Last updated: 2026-06-19
+Last updated: 2026-06-21
 
-## Latest Update
+## Latest Update (2026-06-21) — QA Service + Capture Quality Fixes
+
+All five services running on `user@oldgamepc.tail7c033b.ts.net`:
+
+| Service | Port | Status |
+|---|---|---|
+| `cams_grabber` | — | Running — YOLOv8s, reader thread, RTSP/TCP, GPU 1 |
+| `tg_bot` | — | Running — Telegram delivery + `/admin` `/state` |
+| `sys_monitor` | — | Running — hardware health + UPS |
+| `web_viewer` | 8082 | Running — Flask gallery |
+| `qa_service` | 8083 | Running — QA dashboard, GPU 2 |
+
+**QA Service (new):**
+- `qa_service/` container: YOLOv8n on GPU 2, watches `output/` for new frames
+- Per-frame: blur, gradient, brightness, per-ID perceptual hash, YOLOv8n re-detection
+- PASS = good quality + object visible + vehicle moved; WARN = stationary (normal); FAIL = quality problem
+- Two-tab Flask dashboard at port 8083:
+  - Dashboard tab: 5 time-window summary cards + stats table
+  - Gallery tab: 5 images/page, prev/next, jump-to-page, lightbox
+- Fixed: `numpy<2` pin (torch 2.2.2+cu118 incompatible with numpy 2.x)
+- `CUDA_DEVICE_ORDER=PCI_BUS_ID` ensures stable GPU 2 assignment
+
+**Capture quality fixes (same session):**
+- Reader thread + single-slot buffer replaces tight loop (fixes stale-frame / FIFO lag problem)
+- RTSP over TCP (fixes H.264 composite frames from UDP packet loss)
+- Frame quality gate before YOLO: blur ≥ 30 AND gradient ≥ 5
+- Production model upgraded: yolov8n → yolov8s
+- Persistence requirement: 4 consecutive frames before saving
+- Save raw frame (primary) + annotated debug copy separately
+
+**Documentation added:**
+- `CLAUDE.md` — full project guidance for Claude Code
+- `docs/ARCHITECTURE.md` — system design, data flow, GPU assignments, frame lifecycle
+- `docs/QA_SERVICE_RUNBOOK.md` — QA dashboard operating guide
+
+## Prior Update
 
 - TASK-005 documentation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after fresh-first"
   is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md` validation counts

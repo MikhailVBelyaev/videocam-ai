@@ -1,8 +1,38 @@
 # Next Actions
 
-Last updated: 2026-06-19
+Last updated: 2026-06-21
 
-## Current Priority
+## Current State
+
+All services deployed and healthy. QA dashboard live at port 8083.
+No blocking issues. System is capturing frames 24/7.
+
+## Potential next improvements
+
+1. **QA: persist stats across restarts** — currently stats_log is in-memory (lost on restart,
+   re-seeded from last 50 files). Could write to a SQLite file in the output volume.
+
+2. **output/ cleanup** — no automatic cleanup implemented. `output/` grows unbounded.
+   Add a cron job or service to remove folders older than N days.
+
+3. **Second camera** — architecture supports it but would need a second cams_grabber instance
+   with its own RTSP_URL and output subfolder. QA service would naturally pick up both.
+
+4. **QA: chart / timeline** — the dashboard shows table stats but no time-series chart.
+   Could add a simple Chart.js line chart showing quality rate over time.
+
+5. **sys_monitor: watch cams_grabber connection** — currently sys_monitor does not alert
+   when cams_grabber loses the RTSP stream. Could add a check on the output/ last-modified
+   time to detect capture stalls.
+
+## Completed (2026-06-21)
+
+- QA service created, deployed, and working
+- Capture quality fixes: reader thread, TCP RTSP, frame validation, yolov8s upgrade
+- CLAUDE.md + docs/ARCHITECTURE.md + docs/QA_SERVICE_RUNBOOK.md created
+- PROJECT_STATUS_MEMORY.md and DEVELOPMENT_LOG.md updated
+
+## Prior Priority
 
 TASK-005 documentation for "Fix tg_bot still stuck on old LAST_SENT_FOLDER after
 fresh-first" is complete and in `review_required`. Updated `docs/TG_BOT_RUNBOOK.md`
