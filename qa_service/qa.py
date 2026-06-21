@@ -275,10 +275,13 @@ def api_stats():
 @app.route("/api/gallery")
 def api_gallery():
     page = max(1, int(request.args.get("page", 1)))
+    status_filter = request.args.get("status", "").upper() or None
     per_page = 5
     with results_lock:
         items = list(stats_log)
     items.reverse()   # newest first
+    if status_filter:
+        items = [r for r in items if r["status"] == status_filter]
     total = len(items)
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
