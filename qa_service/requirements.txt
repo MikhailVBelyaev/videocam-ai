@@ -1,6 +1,6 @@
 flask
 ultralytics
 opencv-python
-numpy
+numpy<2
 imagehash
 Pillow
