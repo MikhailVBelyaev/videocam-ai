@@ -295,11 +295,13 @@ while True:
         if obj_id not in current_detected_ids:
             detection_buffer[obj_id] = 0
 
-    # Handle missing objects with tolerance
+    # Handle missing objects with tolerance.
+    # Use current_detected_ids (cleared conf threshold) not current_active (cleared all
+    # save gates) — the duplicate check and MIN_PERSIST gate legitimately block an object
+    # from current_active even when it is still physically present in the scene.
     to_remove: set = set()
     for obj_id in list(object_last_seen.keys()):
-        active_ids = {oid for _, oid in current_active}
-        if obj_id not in active_ids:
+        if obj_id not in current_detected_ids:
             missing_counter[obj_id] += 1
             if missing_counter[obj_id] >= MISSING_TOLERANCE:
                 to_remove.add(obj_id)
