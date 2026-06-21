@@ -451,7 +451,8 @@ td.period-cell{font-weight:600;color:#93c5fd}
 
 <nav>
   <button class="tab-btn active" onclick="switchTab('dashboard',this)">📊 Dashboard</button>
-  <button class="tab-btn" onclick="switchTab('gallery',this)">🖼️ Gallery</button>
+  <button class="tab-btn" onclick="switchTab('best',this)">✅ Gallery</button>
+  <button class="tab-btn" onclick="switchTab('gallery',this)">📋 All Frames</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════ DASHBOARD ══ -->
@@ -483,7 +484,34 @@ td.period-cell{font-weight:600;color:#93c5fd}
 
 </div>
 
-<!-- ═══════════════════════════════════════════ GALLERY ════ -->
+<!-- ═══════════════════════════════════════════ GALLERY (PASS) ═ -->
+<div id="tab-best" style="display:none">
+
+  <div class="pager" id="best-pager-top">
+    <button class="pager-btn" id="best-btn-prev" onclick="changeBestPage(-1)" disabled>← Prev</button>
+    <span class="pager-info" id="best-page-info">—</span>
+    <button class="pager-btn" id="best-btn-next" onclick="changeBestPage(+1)" disabled>Next →</button>
+    <span class="pager-jump">
+      Go to page
+      <input type="number" id="best-page-input" min="1" value="1"
+             onkeydown="if(event.key==='Enter') jumpToBestPage()">
+      <button class="pager-btn" onclick="jumpToBestPage()">Go</button>
+    </span>
+  </div>
+
+  <div class="gallery-grid" id="best-gallery-grid">
+    <p style="padding:40px;color:#374151;text-align:center;grid-column:1/-1">Loading…</p>
+  </div>
+
+  <div class="pager" id="best-pager-bottom">
+    <button class="pager-btn" onclick="changeBestPage(-1)" id="best-btn-prev2" disabled>← Prev</button>
+    <span class="pager-info" id="best-page-info2">—</span>
+    <button class="pager-btn" onclick="changeBestPage(+1)" id="best-btn-next2" disabled>Next →</button>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════ ALL FRAMES ══ -->
 <div id="tab-gallery" style="display:none">
 
   <div class="pager" id="pager-top">
@@ -517,10 +545,12 @@ let currentTab = 'dashboard';
 function switchTab(name, btn) {
   currentTab = name;
   document.getElementById('tab-dashboard').style.display = name === 'dashboard' ? '' : 'none';
+  document.getElementById('tab-best').style.display      = name === 'best'      ? '' : 'none';
   document.getElementById('tab-gallery').style.display   = name === 'gallery'   ? '' : 'none';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   if (name === 'gallery') loadGallery(currentPage);
+  if (name === 'best')    loadBestGallery(bestPage);
 }
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -601,7 +631,72 @@ function renderStatsTable(windows) {
   }).join('');
 }
 
-// ── Gallery ─────────────────────────────────────────────────
+// ── Gallery (PASS only) ──────────────────────────────────────
+let bestPage       = 1;
+let bestTotalPages = 1;
+
+async function loadBestGallery(page) {
+  try {
+    const r = await fetch(`/api/gallery?page=${page}&status=PASS`);
+    const d = await r.json();
+    bestPage       = d.page;
+    bestTotalPages = d.total_pages;
+    renderBestGallery(d.items, d.page, d.total_pages, d.total);
+  } catch(e) { console.error(e); }
+}
+
+function renderBestGallery(items, page, totalPgs, total) {
+  const info = `Page ${page} of ${totalPgs} &nbsp;·&nbsp; ${total} good frames`;
+  document.getElementById('best-page-info').innerHTML  = info;
+  document.getElementById('best-page-info2').innerHTML = info;
+  ['best-btn-prev','best-btn-prev2'].forEach(id =>
+    document.getElementById(id).disabled = page <= 1);
+  ['best-btn-next','best-btn-next2'].forEach(id =>
+    document.getElementById(id).disabled = page >= totalPgs);
+  document.getElementById('best-page-input').value = page;
+  document.getElementById('best-page-input').max   = totalPgs;
+  if (!items.length) {
+    document.getElementById('best-gallery-grid').innerHTML =
+      '<p style="padding:40px;color:#374151;text-align:center;grid-column:1/-1">No good-quality frames yet</p>';
+    return;
+  }
+  document.getElementById('best-gallery-grid').innerHTML = items.map(r => {
+    const objs = (r.detections||[]).map(d =>
+      `<span class="gobj">${d.class} ${Math.round(d.conf*100)}%</span>`).join('');
+    return `
+    <div class="gcard PASS">
+      <img class="gthumb"
+        src="/img/${r.rel_path}"
+        loading="lazy"
+        onerror="this.style.background='#1f2937';this.removeAttribute('src')"
+        onclick="zoomImg(this.src)">
+      <div class="gbody">
+        <div class="grow1">
+          <span class="gid">${r.tracking_id ? 'ID '+r.tracking_id : '—'} &middot; ${r.timestamp?.replace('T',' ')??''}</span>
+          <span class="badge PASS">PASS</span>
+        </div>
+        <div class="gmetrics">
+          <div class="gm ${blurCls(r.blur)}"><span>${r.blur}</span>Blur</div>
+          <div class="gm ${gradCls(r.gradient)}"><span>${r.gradient}</span>Gradient</div>
+          <div class="gm ${brightCls(r.brightness)}"><span>${r.brightness}</span>Brightness</div>
+        </div>
+        <div class="gobjs">${objs||'<span style="color:#374151">no objects</span>'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function changeBestPage(delta) {
+  const next = bestPage + delta;
+  if (next >= 1 && next <= bestTotalPages) loadBestGallery(next);
+}
+
+function jumpToBestPage() {
+  const v = parseInt(document.getElementById('best-page-input').value, 10);
+  if (v >= 1 && v <= bestTotalPages) loadBestGallery(v);
+}
+
+// ── All Frames gallery ───────────────────────────────────────
 let currentPage = 1;
 let totalPages  = 1;
 
@@ -683,9 +778,10 @@ function jumpToPage() {
 loadStats();
 setInterval(loadStats, 30000);   // stats refresh every 30s
 
-// Gallery: auto-refresh page 1 only when tab is active
+// Auto-refresh page 1 of whichever gallery tab is active
 setInterval(() => {
   if (currentTab === 'gallery' && currentPage === 1) loadGallery(1);
+  if (currentTab === 'best'    && bestPage === 1)    loadBestGallery(1);
 }, 15000);
 </script>
 </body>
