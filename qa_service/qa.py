@@ -4,6 +4,8 @@ import sys
 import time
 import threading
 import logging
+import sqlite3
+import json
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,8 +28,9 @@ logging.getLogger("ultralytics").setLevel(logging.WARNING)
 # Config
 # ---------------------------------------------------------------------------
 OUTPUT_DIR = Path("/app/output")
+DB_PATH = OUTPUT_DIR / "qa_stats.db"
 POLL_INTERVAL = 2.0
-PRELOAD_RECENT = 50       # seed stats log on startup
+PRELOAD_RECENT = 50       # seed with files not yet in DB on first run
 
 BLUR_THRESHOLD = 30.0
 GRADIENT_THRESHOLD = 5.0
@@ -40,6 +43,77 @@ TARGET_CLASSES = {"car", "truck", "bus", "person", "motorbike", "bicycle"}
 VEHICLE_CLASSES = {"car", "truck", "bus", "motorbike"}
 
 _ID_RE = re.compile(r"_id(\d+)_")
+
+# ---------------------------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------------------------
+
+def _init_db() -> sqlite3.Connection:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS qa_results (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename      TEXT NOT NULL,
+            rel_path      TEXT NOT NULL UNIQUE,
+            timestamp     TEXT NOT NULL,
+            status        TEXT NOT NULL,
+            blur          REAL,
+            gradient      REAL,
+            brightness    REAL,
+            hash_distance INTEGER,
+            is_different  INTEGER,
+            tracking_id   INTEGER,
+            detections    TEXT,
+            issues        TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ts ON qa_results(timestamp)")
+    conn.commit()
+    return conn
+
+
+def _db_insert(conn: sqlite3.Connection, result: dict):
+    is_diff = result["is_different"]
+    conn.execute("""
+        INSERT OR IGNORE INTO qa_results
+          (filename, rel_path, timestamp, status, blur, gradient, brightness,
+           hash_distance, is_different, tracking_id, detections, issues)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        result["filename"], result["rel_path"], result["timestamp"],
+        result["status"], result["blur"], result["gradient"], result["brightness"],
+        result["hash_distance"],
+        (1 if is_diff else 0) if is_diff is not None else None,
+        result["tracking_id"],
+        json.dumps(result["detections"]),
+        json.dumps(result["issues"]),
+    ))
+    conn.commit()
+
+
+def _db_load_24h(conn: sqlite3.Connection) -> list:
+    """Return all results from the last 24 h, oldest first."""
+    cutoff = (datetime.now() - timedelta(hours=24)).isoformat(timespec="seconds")
+    rows = conn.execute("""
+        SELECT filename, rel_path, timestamp, status, blur, gradient, brightness,
+               hash_distance, is_different, tracking_id, detections, issues
+        FROM qa_results WHERE timestamp >= ? ORDER BY timestamp ASC
+    """, (cutoff,)).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            "filename": r[0], "rel_path": r[1], "timestamp": r[2],
+            "status": r[3], "blur": r[4], "gradient": r[5], "brightness": r[6],
+            "hash_distance": r[7],
+            "is_different": bool(r[8]) if r[8] is not None else None,
+            "tracking_id": r[9],
+            "detections": json.loads(r[10]) if r[10] else [],
+            "issues":     json.loads(r[11]) if r[11] else [],
+        })
+    return out
+
 
 # ---------------------------------------------------------------------------
 # Shared state
@@ -205,19 +279,34 @@ def _image_files(seen: set) -> list:
     return files
 
 
-def watcher(model: YOLO):
+def watcher(model: YOLO, conn: sqlite3.Connection):
     global processed_count, pass_count
-    seen: set = set()
 
-    all_existing = _image_files(set())
-    preload = all_existing[-PRELOAD_RECENT:] if len(all_existing) > PRELOAD_RECENT else all_existing
-    for f in all_existing:
+    # 1. Restore last 24h from DB — no re-analysis needed
+    db_results = _db_load_24h(conn)
+    with results_lock:
+        for r in db_results:
+            stats_log.append(r)
+            processed_count += 1
+            if r["status"] == "PASS":
+                pass_count += 1
+    logger.info("Restored %d results from DB (last 24h)", len(db_results))
+
+    # 2. Build seen set from every filename ever stored in DB
+    db_rel_paths = {row[0] for row in conn.execute("SELECT rel_path FROM qa_results").fetchall()}
+    seen: set = {str(OUTPUT_DIR / rp) for rp in db_rel_paths}
+
+    # 3. Any files on disk not yet in DB — analyse and persist (handles first run)
+    not_in_db = _image_files(seen)
+    preload = not_in_db[-PRELOAD_RECENT:] if len(not_in_db) > PRELOAD_RECENT else not_in_db
+    for f in not_in_db:
         seen.add(str(f))
-
-    logger.info("Pre-seeding with %d recent frames...", len(preload))
+    if preload:
+        logger.info("Pre-seeding %d frames not yet in DB...", len(preload))
     for img_path in preload:
         try:
             result = analyze(img_path, model)
+            _db_insert(conn, result)
             with results_lock:
                 stats_log.append(result)
                 processed_count += 1
@@ -234,6 +323,7 @@ def watcher(model: YOLO):
             seen.add(str(img_path))
             try:
                 result = analyze(img_path, model)
+                _db_insert(conn, result)
                 with results_lock:
                     stats_log.append(result)
                     processed_count += 1
@@ -796,7 +886,10 @@ def main():
     logger.info("Loading QA model (yolov8n) on GPU 2...")
     model = YOLO("yolov8n.pt")
 
-    t = threading.Thread(target=watcher, args=(model,), daemon=True)
+    conn = _init_db()
+    logger.info("SQLite DB ready at %s", DB_PATH)
+
+    t = threading.Thread(target=watcher, args=(model, conn), daemon=True)
     t.start()
 
     logger.info("QA dashboard running on :5001")
