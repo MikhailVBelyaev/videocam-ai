@@ -90,3 +90,21 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  qa_service:
+    build: ./qa_service
+    container_name: qa_service
+    volumes:
+      - ./output:/app/output:ro
+    ports:
+      - "8083:5001"
+    environment:
+      - CUDA_VISIBLE_DEVICES=2   # GPU 2 — dedicated to QA
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+    runtime: nvidia
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
