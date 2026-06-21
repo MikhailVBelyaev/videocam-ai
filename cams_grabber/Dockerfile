@@ -17,7 +17,7 @@ RUN pip3 install --no-cache-dir torch==2.2.2+cu118 torchvision==0.17.2+cu118 tor
 
 # Copy your app files
 COPY main_ssh.py .
-COPY yolov8n.pt .
+COPY yolov8s.pt .
 
 # Ensure output folder exists
 RUN mkdir -p /app/output
