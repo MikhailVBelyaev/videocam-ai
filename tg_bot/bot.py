@@ -45,6 +45,7 @@ for noisy_logger in ("httpx", "httpcore", "telegram", "apscheduler.executors.def
 
 OUTPUT_DIR = "output"
 LAST_SENT_FILE = os.path.join(OUTPUT_DIR, ".last_sent_file")
+STACKING_FLAG_FILE = os.path.join(OUTPUT_DIR, ".frame_stacking")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID") or CHAT_ID
@@ -448,6 +449,55 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
+# /stacking commands — toggle nighttime multi-frame stacking at runtime
+# ---------------------------------------------------------------------------
+
+async def stacking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stacking — show whether frame stacking is currently on or off."""
+    if not _is_admin_chat(update):
+        return
+    enabled = os.path.exists(STACKING_FLAG_FILE)
+    state = "ON" if enabled else "OFF"
+    await update.message.reply_text(
+        f"*Frame stacking:* {state}\n\n"
+        "Combines 3 aligned frames to reduce sensor noise at night.\n"
+        "Use /stacking\\_on or /stacking\\_off to toggle.",
+        parse_mode="Markdown",
+    )
+
+
+async def stacking_on_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stacking_on — enable nighttime multi-frame stacking."""
+    if not _is_admin_chat(update):
+        return
+    try:
+        open(STACKING_FLAG_FILE, "w").close()
+        await update.message.reply_text(
+            "Frame stacking *enabled*. The next saved frame will be a 3-frame median stack.",
+            parse_mode="Markdown",
+        )
+        logger.info("Frame stacking enabled via Telegram command")
+    except OSError as e:
+        await update.message.reply_text(f"Failed to enable stacking: {e}")
+
+
+async def stacking_off_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /stacking_off — disable nighttime multi-frame stacking."""
+    if not _is_admin_chat(update):
+        return
+    try:
+        if os.path.exists(STACKING_FLAG_FILE):
+            os.remove(STACKING_FLAG_FILE)
+        await update.message.reply_text(
+            "Frame stacking *disabled*. Frames will be saved as single raw captures.",
+            parse_mode="Markdown",
+        )
+        logger.info("Frame stacking disabled via Telegram command")
+    except OSError as e:
+        await update.message.reply_text(f"Failed to disable stacking: {e}")
+
+
+# ---------------------------------------------------------------------------
 # /state command helpers
 # ---------------------------------------------------------------------------
 
@@ -750,6 +800,9 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("state", state_command))
+    app.add_handler(CommandHandler("stacking", stacking_command))
+    app.add_handler(CommandHandler("stacking_on", stacking_on_command))
+    app.add_handler(CommandHandler("stacking_off", stacking_off_command))
     app.job_queue.run_repeating(image_sender_job, interval=5, first=5)
     app.run_polling()
 

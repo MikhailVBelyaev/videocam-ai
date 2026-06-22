@@ -64,10 +64,15 @@ BRIGHTNESS_MAX = 245.0         # mean grayscale above this -> overexposed/corrup
 # alignment + pixel-wise median. Reduces sensor noise at night, improves
 # background sharpness. Fast-moving subjects may appear slightly softened.
 #
-# To ENABLE  → keep the line below as-is (True)
-# To DISABLE → change True to False (or comment the line out and add False)
-FRAME_STACKING_ENABLED = True
-STACK_DEPTH = 3   # number of frames to merge (3 ≈ 1.7× noise reduction)
+# Runtime toggle (no rebuild needed):
+#   Send /stacking_on  in Telegram → enables  (creates output/.frame_stacking)
+#   Send /stacking_off in Telegram → disables (deletes output/.frame_stacking)
+#   Send /stacking     in Telegram → shows current state
+#
+# Code default (applied only on first deploy when the flag file does not exist yet):
+FRAME_STACKING_ENABLED = True      # change to False to default to off on next fresh deploy
+STACK_DEPTH = 3                    # frames to merge (3 ≈ 1.7× noise reduction)
+STACKING_FLAG_FILE = Path("/app/output/.frame_stacking")
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------------------------------------------------------------------------
@@ -231,6 +236,16 @@ prev_active: set = set()
 frame_id = 0
 _last_consumed_seq = 0
 
+# Initialise the stacking flag file from the code default.
+# Only touches the file if it doesn't exist yet — so Telegram toggles survive rebuilds.
+try:
+    if FRAME_STACKING_ENABLED and not STACKING_FLAG_FILE.exists():
+        STACKING_FLAG_FILE.touch()
+    elif not FRAME_STACKING_ENABLED and STACKING_FLAG_FILE.exists():
+        STACKING_FLAG_FILE.unlink()
+except OSError:
+    pass
+
 # Video clip recording state
 _preroll: deque = deque(maxlen=PREROLL_FRAMES)
 _recording: bool = False
@@ -389,8 +404,8 @@ while True:
                 "New object: ID=%d Class=%s Conf=%.2f", obj_id, class_name, conf
             )
             output_dir = get_daily_output_dir()
-            # Primary artifact: stacked (noise-reduced) frame when enabled, else raw
-            save_frame = _stack_frames(frame, _preroll) if FRAME_STACKING_ENABLED else frame
+            # Primary artifact: stacked (noise-reduced) frame when flag is on, else raw
+            save_frame = _stack_frames(frame, _preroll) if STACKING_FLAG_FILE.exists() else frame
             filename = output_dir / f"frame_{timestamp_str}_id{obj_id}_{class_name}.jpg"
             cv2.imwrite(str(filename), save_frame)
             # Debug artifact: annotated raw frame with YOLO boxes (always single frame)
