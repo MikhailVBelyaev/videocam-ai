@@ -59,6 +59,17 @@ GRADIENT_THRESHOLD = 5.0
 BRIGHTNESS_MIN = 15.0          # mean grayscale below this -> dark/corrupt
 BRIGHTNESS_MAX = 245.0         # mean grayscale above this -> overexposed/corrupt
 
+# ── NIGHTTIME MULTI-FRAME STACKING ──────────────────────────────────────────
+# Combines the last STACK_DEPTH validated frames into one image using ECC
+# alignment + pixel-wise median. Reduces sensor noise at night, improves
+# background sharpness. Fast-moving subjects may appear slightly softened.
+#
+# To ENABLE  → keep the line below as-is (True)
+# To DISABLE → change True to False (or comment the line out and add False)
+FRAME_STACKING_ENABLED = True
+STACK_DEPTH = 3   # number of frames to merge (3 ≈ 1.7× noise reduction)
+# ────────────────────────────────────────────────────────────────────────────
+
 # ---------------------------------------------------------------------------
 # Frame quality validators
 # ---------------------------------------------------------------------------
@@ -93,6 +104,49 @@ def _is_frame_valid(frame: np.ndarray) -> bool:
 def _phash(frame_bgr: np.ndarray) -> imagehash.ImageHash:
     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
     return imagehash.average_hash(Image.fromarray(rgb))
+
+
+def _stack_frames(reference: np.ndarray, preroll: deque) -> np.ndarray:
+    """Align and median-stack the last STACK_DEPTH frames to cut sensor noise.
+
+    Each source frame is aligned to the reference using ECC (translation only —
+    sufficient for a fixed camera with minor vibration). Pixel-wise median then
+    suppresses random noise while keeping edges sharper than a plain average.
+    Falls back silently to the raw reference if alignment fails or there are not
+    enough frames buffered yet.
+    """
+    recent_frames = [f for f, _ in list(preroll)]
+    sources = recent_frames[-(STACK_DEPTH - 1):]   # frames BEFORE the reference
+    if not sources:
+        return reference
+
+    h, w = reference.shape[:2]
+    ref_gray = cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4)
+
+    aligned = [reference]
+    for src in sources:
+        if src.shape[:2] != (h, w):
+            continue
+        try:
+            src_gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+            warp = np.eye(2, 3, dtype=np.float32)
+            _, warp = cv2.findTransformECC(
+                ref_gray, src_gray, warp, cv2.MOTION_TRANSLATION, criteria
+            )
+            warped = cv2.warpAffine(
+                src, warp, (w, h),
+                flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP,
+            )
+            aligned.append(warped)
+        except cv2.error:
+            aligned.append(src)   # alignment failed — use unaligned, still helps median
+
+    if len(aligned) < 2:
+        return reference
+
+    stacked = np.median(np.stack(aligned, axis=0), axis=0).astype(np.uint8)
+    return stacked
 
 
 # ---------------------------------------------------------------------------
@@ -335,10 +389,11 @@ while True:
                 "New object: ID=%d Class=%s Conf=%.2f", obj_id, class_name, conf
             )
             output_dir = get_daily_output_dir()
-            # Primary artifact: clean original frame (no annotations)
+            # Primary artifact: stacked (noise-reduced) frame when enabled, else raw
+            save_frame = _stack_frames(frame, _preroll) if FRAME_STACKING_ENABLED else frame
             filename = output_dir / f"frame_{timestamp_str}_id{obj_id}_{class_name}.jpg"
-            cv2.imwrite(str(filename), frame)
-            # Debug artifact: annotated frame with YOLO boxes
+            cv2.imwrite(str(filename), save_frame)
+            # Debug artifact: annotated raw frame with YOLO boxes (always single frame)
             debug_filename = output_dir / f"frame_{timestamp_str}_id{obj_id}_{class_name}_debug.jpg"
             cv2.imwrite(str(debug_filename), annotated)
             if filename.exists():
