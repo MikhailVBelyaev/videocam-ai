@@ -6,7 +6,8 @@ services:
       - ./output:/app/output
       - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
     environment:
-      - NVIDIA_VISIBLE_DEVICES=1   # GPU 1 by PCI bus order (02:00.0) — verified idle
+      - NVIDIA_VISIBLE_DEVICES=1                          # GPU 1 by PCI bus order (02:00.0)
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility  # 'video' injects libnvcuvid for NVDEC
       - CUDA_DEVICE_ORDER=PCI_BUS_ID
       - CAMERA_ID=cam1
       - RTSP_URL=rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101
