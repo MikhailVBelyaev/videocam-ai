@@ -91,8 +91,17 @@ def _write_sysinfo(data: dict):
         print(f"Failed to write sysinfo: {e}")
 
 
+SYSINFO_INTERVAL = 60    # seconds between .sysinfo.json updates (used by /state)
+TELEGRAM_INTERVAL = 3600  # seconds between hourly Telegram reports
+
+
 def main():
-    """Main monitoring loop (runs every hour)."""
+    """Main monitoring loop.
+
+    .sysinfo.json is refreshed every SYSINFO_INTERVAL seconds so /state always
+    shows current hardware stats. Telegram reports are sent once per hour.
+    """
+    last_telegram_ts = 0.0
     while True:
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
@@ -125,18 +134,21 @@ def main():
             "ups": ups,
         })
 
-        msg = (
-            f"🖥 System Report - {timestamp}\n"
-            f"CPU Usage: {cpu}%\n"
-            f"{cpu_temps}\n"
-            f"RAM Usage: {ram.percent}% ({ram.used // (1024**2)}MB / {ram.total // (1024**2)}MB)\n"
-            f"Disk Usage: {disk.percent}% ({disk.used // (1024**3)}GB / {disk.total // (1024**3)}GB)\n"
-            f"{gpu_str}\n"
-            f"{ups}"
-        )
+        now = time.time()
+        if now - last_telegram_ts >= TELEGRAM_INTERVAL:
+            msg = (
+                f"🖥 System Report - {timestamp}\n"
+                f"CPU Usage: {cpu}%\n"
+                f"{cpu_temps}\n"
+                f"RAM Usage: {ram.percent}% ({ram.used // (1024**2)}MB / {ram.total // (1024**2)}MB)\n"
+                f"Disk Usage: {disk.percent}% ({disk.used // (1024**3)}GB / {disk.total // (1024**3)}GB)\n"
+                f"{gpu_str}\n"
+                f"{ups}"
+            )
+            send_message(msg)
+            last_telegram_ts = now
 
-        send_message(msg)
-        time.sleep(3600)  # wait 1 hour
+        time.sleep(SYSINFO_INTERVAL)
 
 if __name__ == "__main__":
     main()
