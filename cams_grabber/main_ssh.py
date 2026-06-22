@@ -1,6 +1,6 @@
 import cv2
 from ultralytics import YOLO
-from collections import defaultdict
+from collections import defaultdict, deque
 import logging
 import os
 import sys
@@ -27,7 +27,13 @@ logging.getLogger("ultralytics").setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 RTSP_URL = "rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101"
 
-TARGET_CLASSES = {"car", "person"}
+ANIMAL_CLASSES = {
+    "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe",
+}
+VIDEO_TARGET_CLASSES = {"person"} | ANIMAL_CLASSES  # classes we record clips of (not vehicles)
+
+TARGET_CLASSES = {"car", "person"} | ANIMAL_CLASSES
 VEHICLE_CLASSES = {"car", "truck", "bus"}
 CONF_THRESHOLD = 0.60          # tracking threshold — object must clear this to be counted
 SAVE_CONF_THRESHOLD = 0.70     # stricter gate at actual disk write — reduces ghost saves
@@ -38,6 +44,14 @@ DIAG_INTERVAL = 100
 
 MIN_BOX_AREA_FRACTION = 0.003  # reject boxes < 0.3% of frame area (phantom detections on texture)
 SAME_SCENE_THRESHOLD = 5       # phash distance <= this for same tracking ID -> scene unchanged, skip
+
+# Video clip recording
+RECORD_MIN_PERSIST_FRAMES = 5  # one higher than MIN_PERSIST_FRAMES — clip is a heavier commit than a JPG
+PREROLL_FRAMES = 45            # ring-buffer depth: ~3-4s pre-roll at 10-15 fps inference rate
+MAX_CLIP_SECONDS = 30          # hard per-clip cap; bounds disk use for loitering objects
+CLIP_COOLDOWN_SECONDS = 60     # gap between clips for the same tracking ID
+RECORD_FPS = 12.0              # fps written into mp4 header (midpoint of expected 10-15 fps inference rate)
+FOURCC_STR = "mp4v"            # MPEG-4 Part2 — only codec reliably encodable by the opencv wheel + HTML5-playable
 
 # Frame quality thresholds
 BLUR_THRESHOLD = 30.0
@@ -163,6 +177,16 @@ prev_active: set = set()
 frame_id = 0
 _last_consumed_seq = 0
 
+# Video clip recording state
+_preroll: deque = deque(maxlen=PREROLL_FRAMES)
+_recording: bool = False
+_writer: cv2.VideoWriter | None = None
+_record_id: int | None = None
+_record_class: str = ""
+_record_start_ts: datetime | None = None
+_record_missing: int = 0
+_record_cooldown: dict = {}    # obj_id -> datetime of last clip end
+
 t = threading.Thread(target=_reader_thread, args=(RTSP_URL,), daemon=True)
 t.start()
 
@@ -189,6 +213,13 @@ while True:
     # Discard corrupt or extreme-brightness frames before running inference
     if not _is_frame_valid(frame):
         continue
+
+    # Feed pre-roll ring buffer and write the current frame into any active clip.
+    # Both happen before inference so the clip contains every valid frame, not just
+    # frames where a detection fired.
+    _preroll.append((frame.copy(), capture_ts))
+    if _recording and _writer is not None:
+        _writer.write(frame)
 
     # imgsz=640 keeps inference fast enough on GTX 1060 to reduce frame skips
     results = model.track(frame, persist=True, verbose=False, device=0, imgsz=640)
@@ -242,6 +273,41 @@ while True:
         current_active.add((class_name, obj_id))
         missing_counter[obj_id] = 0
 
+        # ── Video clip start gate (people and animals only) ──────────────────
+        # Runs in parallel to the JPG save logic; does not touch object_last_seen
+        # or _last_save_hash so it cannot interfere with the frame-save pipeline.
+        if (
+            not _recording
+            and class_name in VIDEO_TARGET_CLASSES
+            and detection_buffer[obj_id] >= RECORD_MIN_PERSIST_FRAMES
+        ):
+            cooldown_ts = _record_cooldown.get(obj_id)
+            clip_ready = (
+                cooldown_ts is None
+                or (current_time - cooldown_ts).total_seconds() >= CLIP_COOLDOWN_SECONDS
+            )
+            if clip_ready:
+                output_dir = get_daily_output_dir()
+                timestamp_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
+                clip_path = output_dir / f"clip_{timestamp_str}_id{obj_id}_{class_name}.mp4"
+                fourcc = cv2.VideoWriter_fourcc(*FOURCC_STR)
+                w = cv2.VideoWriter(str(clip_path), fourcc, RECORD_FPS, (frame_w, frame_h))
+                if w.isOpened():
+                    for pr_frame, _ in _preroll:
+                        w.write(pr_frame)
+                    _recording = True
+                    _writer = w
+                    _record_id = obj_id
+                    _record_class = class_name
+                    _record_start_ts = current_time
+                    _record_missing = 0
+                    logging.info(
+                        "Recording clip: ID=%d class=%s → %s", obj_id, class_name, clip_path.name
+                    )
+                else:
+                    logging.error("VideoWriter failed to open for %s", clip_path)
+        # ─────────────────────────────────────────────────────────────────────
+
         last_seen = object_last_seen.get(obj_id)
         if last_seen is None or (current_time - last_seen[1]).total_seconds() > COOLDOWN_SECONDS:
             # Stricter confidence gate at save point: track at 0.60, write at 0.70
@@ -290,6 +356,27 @@ while True:
                 obj_id, class_name, last_seen[1],
             )
 
+    # ── Video clip stop check ────────────────────────────────────────────────
+    if _recording:
+        if _record_id in current_detected_ids:
+            _record_missing = 0
+        else:
+            _record_missing += 1
+        elapsed = (current_time - _record_start_ts).total_seconds()
+        if _record_missing >= MISSING_TOLERANCE or elapsed >= MAX_CLIP_SECONDS:
+            _writer.release()
+            _record_cooldown[_record_id] = current_time
+            logging.info(
+                "Saved clip: ID=%d class=%s duration=%.1fs", _record_id, _record_class, elapsed
+            )
+            _recording = False
+            _writer = None
+            _record_id = None
+            _record_class = ""
+            _record_start_ts = None
+            _record_missing = 0
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Reset detection_buffer for IDs absent this frame -- prevents ghost credit accumulation
     for obj_id in list(detection_buffer.keys()):
         if obj_id not in current_detected_ids:
@@ -314,6 +401,7 @@ while True:
         object_last_seen.pop(obj_id, None)
         detection_buffer.pop(obj_id, None)
         _last_save_hash.pop(obj_id, None)
+        _record_cooldown.pop(obj_id, None)
 
     prev_active = {item for item in prev_active if item[1] not in to_remove} | current_active
 

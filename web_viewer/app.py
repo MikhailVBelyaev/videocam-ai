@@ -6,7 +6,9 @@ from flask import Flask, redirect, request, send_from_directory, url_for, Respon
 app = Flask(__name__)
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/app/output")
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
+VIDEO_EXTENSIONS = (".mp4",)
 PER_PAGE = 20
+VIDEO_PER_PAGE = 6
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -24,6 +26,20 @@ def _date_dirs():
                 except ValueError:
                     pass
         return sorted(valid, reverse=True)
+    except OSError:
+        return []
+
+
+def _videos_for_date(date_str):
+    folder = os.path.join(OUTPUT_DIR, date_str)
+    try:
+        files = [
+            f for f in os.listdir(folder)
+            if f.lower().endswith(VIDEO_EXTENSIONS)
+            and os.path.isfile(os.path.join(folder, f))
+        ]
+        files.sort(key=lambda f: os.path.getmtime(os.path.join(folder, f)), reverse=True)
+        return files
     except OSError:
         return []
 
@@ -82,7 +98,7 @@ _LB_JS = "document.querySelectorAll('.card img').forEach(i=>i.addEventListener('
 
 
 def _nav(active):
-    links = [("Raw", "/raw"), ("Admin", "/admin")]
+    links = [("Raw", "/raw"), ("Videos", "/videos"), ("Admin", "/admin")]
     out = ""
     for label, href in links:
         cls = "active" if label == active else ""
@@ -156,6 +172,58 @@ def raw_gallery():
 {pager}
 {_LB_HTML}
 <script>{_LB_JS}</script>
+</body></html>""", mimetype="text/html")
+
+
+@app.route("/videos")
+def videos_page():
+    dates = _date_dirs()
+    selected = request.args.get("date", dates[0] if dates else "")
+    page = max(1, int(request.args.get("page", 1)))
+
+    all_videos = _videos_for_date(selected) if selected else []
+    total = len(all_videos)
+    total_pages = max(1, (total + VIDEO_PER_PAGE - 1) // VIDEO_PER_PAGE)
+    page = min(page, total_pages)
+    page_videos = all_videos[(page - 1) * VIDEO_PER_PAGE: page * VIDEO_PER_PAGE]
+
+    date_opts = "".join(
+        f'<option value="{d}" {"selected" if d == selected else ""}>{d}</option>'
+        for d in dates
+    )
+    date_sel = f'<select onchange="location=\'/videos?date=\'+this.value">{date_opts}</select>'
+
+    cards = ""
+    for fname in page_videos:
+        video_url = f"/{selected}/{fname}"
+        # fname format: clip_YYYY-MM-DD HH:MM:SS_id{N}_{class}.mp4
+        ts = fname[5:24] if len(fname) > 24 else fname
+        size_bytes = os.path.getsize(os.path.join(OUTPUT_DIR, selected, fname))
+        size_mb = f"{size_bytes / 1_048_576:.1f} MB"
+        cards += f"""
+        <div class="card">
+          <video controls preload="metadata"
+            style="width:100%;height:170px;object-fit:cover;background:#000;display:block">
+            <source src="{video_url}" type="video/mp4">
+          </video>
+          <div class="card-body">
+            <div>{ts} &nbsp;·&nbsp; {size_mb}</div>
+            <div class="fn">{fname}</div>
+          </div>
+        </div>"""
+
+    if not cards:
+        cards = '<div class="empty">No video clips for this date.</div>'
+
+    pager = _pager(page, total_pages, f"/videos?date={selected}&x=1")
+
+    return Response(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Videos — videocam-ai</title>
+<style>{_CSS}</style></head><body>
+{_nav("Videos")}
+<div class="title"><span>Clips — {total} videos for {selected}</span>{date_sel}</div>
+<div class="grid">{cards}</div>
+{pager}
 </body></html>""", mimetype="text/html")
 
 
