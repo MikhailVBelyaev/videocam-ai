@@ -1,5 +1,37 @@
 # Development Log
 
+## 2026-06-22 (2) — GStreamer NVDEC reader (no ffmpeg subprocess)
+
+### Replace ffmpeg pipe with GStreamer in-process pipeline
+
+**Problem:** After switching to ffmpeg+NVDEC in the previous session, the ffmpeg subprocess
+consumed ~24% CPU on top of Python's 172% = ~196% total. The subprocess IPC and Unix pipe
+(6 MB BGR at 15fps = 90 MB/s through the kernel pipe) ate most of the CPU savings from NVDEC.
+
+**Solution:** GStreamer Python pipeline running entirely in-process via `gi.repository.Gst`.
+
+Pipeline: `rtspsrc (TCP) → rtph264depay → h264parse → nvh264dec → cudadownload → appsink`
+
+- `nvh264dec` decodes H.264 on GPU via NVDEC (same GPU savings as before)
+- `cudadownload` moves frames from CUDA memory to system RAM (3 MB NV12 per frame)
+- `appsink.emit('try-pull-sample', Gst.SECOND)` delivers NV12 buffers directly in Python
+- `cv2.cvtColor(nv12, cv2.COLOR_YUV2BGR_NV12)` converts to BGR on CPU (~1 ms/frame)
+- No subprocess, no Unix pipe — eliminates the ~24% CPU from IPC overhead
+
+**Dockerfile:** Replaced `ffmpeg` apt package with GStreamer packages:
+`gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad`
+`gstreamer1.0-tools python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0`
+
+**Stream dimensions:** No longer probed at startup — discovered from first frame's caps:
+`caps.get_structure(0).get_int('width')` / `.get_int('height')`.
+
+**Error/reconnect:** `try-pull-sample` with 1-second timeout; bus ERROR/EOS triggers
+pipeline NULL + reconnect with exponential backoff (1s → 30s).
+
+**Expected result:** ~196% total CPU → ~165-175% (save ~24% from removing ffmpeg process).
+
+---
+
 ## 2026-06-22 — Multi-camera + GPU pipeline + CPU reduction
 
 ### Multi-camera output layout

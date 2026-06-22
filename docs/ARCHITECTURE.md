@@ -13,9 +13,9 @@ IP Camera (RTSP H.264, 1920×1080)
 │  cams_grabber_cam1  (GPU 1 — NVDEC + YOLOv8s)       │
 │                                                       │
 │  Reader thread                                        │
-│    ffmpeg -hwaccel cuda -c:v h264_cuvid ──►           │
-│    bgr24 pipe ──► single-slot buffer                  │
-│        │          (H.264 decode on GPU via NVDEC)     │
+│    GStreamer: rtspsrc → nvh264dec (NVDEC) ──►         │
+│    cudadownload → NV12 → cv2 YUV2BGR                  │
+│    ──► single-slot buffer  (no subprocess, no pipe)   │
 │        ▼                                              │
 │  GPU quality gate (PyTorch CUDA)                      │
 │    Laplacian blur var + Sobel gradient var            │
@@ -51,17 +51,20 @@ Runs once per camera; cam2/cam3 start identical containers via Docker Compose pr
 ```
 Reader thread                       Main thread (capped at INFERENCE_FPS_MAX=8)
 ─────────────                       ─────────────────────────────────────────
-ffmpeg subprocess:                  while True:
-  -hwaccel cuda                       throttle to 8 fps
-  -c:v h264_cuvid                     slot = _latest_slot
-  NVDEC decodes H.264 on GPU          if slot is None or seq == _last_seq:
-  pipe: raw bgr24 bytes                 sleep(0.005); continue
-  np.frombuffer → numpy array         seq, frame, ts = slot
-  store in _latest_slot               _is_frame_valid(frame)  ← GPU (PyTorch CUDA)
-  reconnect w/ backoff                  if invalid: continue
-                                      results = model.track(frame, ...)
-                                      if detection criteria met: save
+GStreamer pipeline (in-process):    while True:
+  rtspsrc (TCP)                       throttle to 8 fps
+  → rtph264depay                      slot = _latest_slot
+  → h264parse                         if slot is None or seq == _last_seq:
+  → nvh264dec  ← NVDEC GPU decode       sleep(0.005); continue
+  → cudadownload (3 MB NV12 RAM)      seq, frame, ts = slot
+  → appsink                           _is_frame_valid(frame)  ← GPU (PyTorch CUDA)
+  cv2.cvtColor(YUV2BGR) → bgr frame     if invalid: continue
+  store in _latest_slot               results = model.track(frame, ...)
+  reconnect w/ backoff                if detection criteria met: save
 ```
+
+No ffmpeg subprocess — GStreamer delivers buffers in-process, eliminating Unix pipe
+IPC overhead (~24% CPU that the ffmpeg process consumed).
 
 The reader thread discards all but the latest frame. The main thread never
 processes a stale frame — a key fix for the "garbage image" production problem.
@@ -231,8 +234,8 @@ output/
 
 ```
 1. Camera emits H.264 NAL units over RTSP/TCP
-2. ffmpeg subprocess (-hwaccel cuda -c:v h264_cuvid) decodes on GPU (NVDEC)
-   → raw bgr24 bytes piped to Python → numpy array
+2. GStreamer pipeline (in-process): rtspsrc → nvh264dec (NVDEC) decodes on GPU
+   → cudadownload brings NV12 (3 MB) to system RAM → cv2.cvtColor → BGR numpy
 3. Reader thread stores latest frame in _latest_slot (discards older)
 4. Main thread (throttled to 8fps) validates on GPU (PyTorch CUDA):
    blur var ≥ 30, Sobel gradient var ≥ 500, brightness 15–245
@@ -268,9 +271,11 @@ repeat of what the production detector already said.
 
 ## Known limitations
 
-- Frames still cross CPU RAM on each inference tick (ffmpeg pipe → numpy). H.264 decode
-  is on GPU (NVDEC) but pixels are downloaded to CPU before the next GPU upload for quality
-  checks and YOLO. A GStreamer + NVMM pipeline would eliminate this CPU hop.
+- Frames still cross CPU RAM on each inference tick. H.264 decode is on GPU (NVDEC);
+  `cudadownload` brings NV12 to system RAM (3 MB), cv2.cvtColor converts to BGR (6 MB),
+  quality check uploads to GPU. YOLO also does an internal CPU→GPU upload. A full
+  GPU-to-GPU pass (GStreamer NVMM → PyTorch tensor → YOLO tensor input) would cut this
+  further but requires manual letterbox + coordinate reversal for the tracker.
 - The reader thread reconnects on stream loss (exponential backoff 1 s → 30 s) but does not
   alert — sys_monitor does not watch cams_grabber's connection state.
 - `output/` grows unbounded. No automatic cleanup is implemented.

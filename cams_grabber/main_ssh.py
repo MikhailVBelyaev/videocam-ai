@@ -6,8 +6,6 @@ import os
 import sys
 import time
 import threading
-import subprocess
-import json
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -15,6 +13,11 @@ from datetime import datetime
 from pathlib import Path
 import imagehash
 from PIL import Image
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst
+
+Gst.init(None)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -188,64 +191,86 @@ _frame_seq: int = 0
 _frame_lock = threading.Lock()
 
 
-def _probe_stream_dims(url: str) -> tuple[int, int]:
-    """Return (width, height) by probing the RTSP stream. Falls back to 1920×1080."""
-    try:
-        out = subprocess.check_output(
-            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', url],
-            timeout=15, stderr=subprocess.DEVNULL,
-        )
-        for s in json.loads(out).get('streams', []):
-            if s.get('codec_type') == 'video':
-                return int(s['width']), int(s['height'])
-    except Exception as e:
-        logging.warning("ffprobe failed (%s), assuming 1920×1080", e)
-    return 1920, 1080
+def _reader_thread(url: str) -> None:
+    """Daemon thread: decode H.264 on GPU via GStreamer nvh264dec (NVDEC), store latest BGR frame.
 
+    Pipeline: rtspsrc (TCP) → rtph264depay → h264parse → nvh264dec → cudadownload
+    → NV12 in system RAM → cv2.cvtColor YUV2BGR → single-slot buffer.
 
-def _reader_thread(url: str, width: int, height: int) -> None:
-    """Daemon thread: decode H.264 on GPU via h264_cuvid (NVDEC), store latest frame."""
+    No subprocess, no Unix pipe. GStreamer appsink delivers NV12 buffers (3 MB)
+    directly in-process; cv2.cvtColor converts to BGR (6 MB) in ~1 ms on CPU.
+    Eliminates the ffmpeg subprocess (~24 % CPU overhead from IPC and pipe reads).
+    """
     global _latest_slot, _frame_seq
-    frame_bytes = width * height * 3
     backoff = 1.0
 
     while True:
-        cmd = [
-            'ffmpeg', '-loglevel', 'error',
-            '-hwaccel', 'cuda',
-            '-c:v', 'h264_cuvid',        # NVDEC hardware decoder — H.264 decode on GPU
-            '-rtsp_transport', 'tcp',
-            '-i', url,
-            '-f', 'rawvideo',
-            '-pix_fmt', 'bgr24',
-            'pipe:1',
-        ]
-        proc = None
+        pipeline = None
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-            logging.info("RTSP reader connected via NVDEC (h264_cuvid) %dx%d", width, height)
-            backoff = 1.0
+            # nvh264dec outputs NV12 in CUDA memory; cudadownload moves it to system
+            # RAM so appsink can map it as a plain CPU buffer (3 MB NV12 per frame).
+            pipeline = Gst.parse_launch(
+                'rtspsrc name=src latency=0 ! '
+                'rtph264depay ! h264parse ! nvh264dec ! '
+                'cudadownload ! video/x-raw,format=NV12 ! '
+                'appsink name=sink sync=false max-buffers=2 drop=true'
+            )
+            src = pipeline.get_by_name('src')
+            src.set_property('location', url)
+            src.set_property('protocols', 4)   # 4 = TCP; avoids UDP packet-loss corruption
+            sink = pipeline.get_by_name('sink')
+
+            ret = pipeline.set_state(Gst.State.PLAYING)
+            if ret == Gst.StateChangeReturn.FAILURE:
+                raise RuntimeError("GStreamer pipeline failed to enter PLAYING state")
+
+            width = height = None
+
             while True:
-                raw = proc.stdout.read(frame_bytes)
-                if len(raw) < frame_bytes:
-                    break  # stream ended or error — reconnect
-                # np.frombuffer gives a read-only view; .copy() makes it writable
-                frame = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 3).copy()
+                # 1-second timeout lets us check the bus for errors / EOS
+                sample = sink.emit('try-pull-sample', Gst.SECOND)
+                if sample is None:
+                    msg = pipeline.get_bus().timed_pop_filtered(
+                        0, Gst.MessageType.ERROR | Gst.MessageType.EOS
+                    )
+                    if msg:
+                        if msg.type == Gst.MessageType.ERROR:
+                            err, _ = msg.parse_error()
+                            logging.warning("GStreamer pipeline error: %s", err)
+                        break
+                    continue
+
+                # Discover dimensions from first frame's caps; stable thereafter
+                if width is None:
+                    caps = sample.get_caps()
+                    st = caps.get_structure(0)
+                    width = st.get_int('width')[1]
+                    height = st.get_int('height')[1]
+                    logging.info("GStreamer NVDEC connected: %dx%d NV12", width, height)
+                    backoff = 1.0
+
+                buf = sample.get_buffer()
+                ok, info = buf.map(Gst.MapFlags.READ)
+                if not ok:
+                    break
+
+                # NV12 layout: Y plane [H, W] followed by interleaved UV plane [H/2, W]
+                nv12 = np.frombuffer(info.data, dtype=np.uint8).reshape(height * 3 // 2, width)
+                bgr = cv2.cvtColor(nv12, cv2.COLOR_YUV2BGR_NV12)
+                buf.unmap(info)
+
                 ts = datetime.now()
                 with _frame_lock:
                     _frame_seq += 1
-                    _latest_slot = (_frame_seq, frame, ts)
-        except Exception as e:
-            logging.warning("NVDEC reader error: %s", e)
-        finally:
-            if proc is not None:
-                try:
-                    proc.terminate()
-                    proc.wait(timeout=5)
-                except Exception:
-                    pass
+                    _latest_slot = (_frame_seq, bgr, ts)
 
-        logging.warning("RTSP disconnected, retrying in %.0fs", backoff)
+        except Exception as e:
+            logging.warning("GStreamer reader error: %s", e)
+        finally:
+            if pipeline is not None:
+                pipeline.set_state(Gst.State.NULL)
+
+        logging.warning("GStreamer reader disconnected, retrying in %.0fs", backoff)
         time.sleep(backoff)
         backoff = min(backoff * 2, 30.0)
 
@@ -315,10 +340,7 @@ _record_start_ts: datetime | None = None
 _record_missing: int = 0
 _record_cooldown: dict = {}    # obj_id -> datetime of last clip end
 
-_stream_w, _stream_h = _probe_stream_dims(RTSP_URL)
-logging.info("Stream dimensions probed: %dx%d", _stream_w, _stream_h)
-
-t = threading.Thread(target=_reader_thread, args=(RTSP_URL, _stream_w, _stream_h), daemon=True)
+t = threading.Thread(target=_reader_thread, args=(RTSP_URL,), daemon=True)
 t.start()
 
 # ---------------------------------------------------------------------------

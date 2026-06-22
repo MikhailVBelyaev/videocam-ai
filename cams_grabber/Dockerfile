@@ -3,7 +3,14 @@ FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    python3 python3-pip python3-venv ffmpeg \
+    python3 python3-pip python3-venv \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-tools \
+    python3-gi \
+    gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Pin PyTorch CUDA 11.8 build BEFORE installing requirements.
