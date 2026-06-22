@@ -307,6 +307,11 @@ def iou(boxA: list, boxB: list) -> float:
 # Startup
 # ---------------------------------------------------------------------------
 
+# Limit PyTorch CPU worker threads. Inference is on GPU; the default 4+ threads
+# all spin at ~50% CPU each waiting for CUDA ops to complete (~150% wasted CPU).
+torch.set_num_threads(2)
+torch.set_num_interop_threads(2)
+
 # yolov8s for production accuracy; device=0 is GPU exposed via CUDA_VISIBLE_DEVICES=1
 model = YOLO("yolov8s.pt")
 _init_quality_kernels()    # needs CUDA already initialised by YOLO above
