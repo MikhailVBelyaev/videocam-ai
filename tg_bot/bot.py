@@ -11,7 +11,7 @@ import imagehash
 import shutil
 import asyncio
 
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 try:
@@ -784,6 +784,20 @@ async def image_sender_job(context: ContextTypes.DEFAULT_TYPE):
         await asyncio.to_thread(_send_new_images_iteration)
 
 
+BOT_COMMANDS = [
+    BotCommand("admin",        "Summary + latest captured image"),
+    BotCommand("state",        "Container health and uptime"),
+    BotCommand("stacking",     "Show frame stacking state (ON / OFF)"),
+    BotCommand("stacking_on",  "Enable nighttime multi-frame stacking"),
+    BotCommand("stacking_off", "Disable nighttime multi-frame stacking"),
+]
+
+
+async def _post_init(application: Application) -> None:
+    await application.bot.set_my_commands(BOT_COMMANDS)
+    logger.info("Bot command menu registered (%d commands)", len(BOT_COMMANDS))
+
+
 def main():
     global LAST_SENT_IMAGE, LAST_SENT_FOLDER
     if not BOT_TOKEN or not CHAT_ID:
@@ -797,11 +811,11 @@ def main():
         logger.info("No previously sent file found in state")
         _initialize_startup_state()
 
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(CommandHandler("state", state_command))
-    app.add_handler(CommandHandler("stacking", stacking_command))
-    app.add_handler(CommandHandler("stacking_on", stacking_on_command))
+    app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
+    app.add_handler(CommandHandler("admin",        admin_command))
+    app.add_handler(CommandHandler("state",        state_command))
+    app.add_handler(CommandHandler("stacking",     stacking_command))
+    app.add_handler(CommandHandler("stacking_on",  stacking_on_command))
     app.add_handler(CommandHandler("stacking_off", stacking_off_command))
     app.job_queue.run_repeating(image_sender_job, interval=5, first=5)
     app.run_polling()
