@@ -6,7 +6,11 @@ import os
 import sys
 import time
 import threading
+import subprocess
+import json
 import numpy as np
+import torch
+import torch.nn.functional as F
 from datetime import datetime
 from pathlib import Path
 import imagehash
@@ -80,37 +84,48 @@ STACKING_FLAG_FILE = Path("/app/output/.frame_stacking")
 # ────────────────────────────────────────────────────────────────────────────
 
 # ---------------------------------------------------------------------------
-# Frame quality validators
+# Frame quality validators — run on GPU via PyTorch to keep CPU free
 # ---------------------------------------------------------------------------
 
-def _compute_blur_score(image_bgr: np.ndarray) -> float:
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    lap = cv2.Laplacian(gray, cv2.CV_32F)   # float32 is 2× faster than float64
-    _, std = cv2.meanStdDev(lap)            # SIMD-optimised variance via std²
-    return float(std[0][0] ** 2)
+_qk: dict | None = None  # quality-check kernels, initialised after YOLO loads CUDA
 
 
-def _compute_gradient_score(image_bgr: np.ndarray) -> float:
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    # cv2.Sobel is 8-10× faster than np.gradient: SIMD, float32, no temp 16 MB float64 arrays
-    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    _, std = cv2.meanStdDev(cv2.magnitude(gx, gy))
-    return float(std[0][0] ** 2)
+def _init_quality_kernels() -> None:
+    global _qk
+    dev = torch.device('cuda:0')
+    _qk = {
+        'lap': torch.tensor([[0., 1., 0.], [1., -4., 1.], [0., 1., 0.]], device=dev).view(1, 1, 3, 3),
+        'sx':  torch.tensor([[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]], device=dev).view(1, 1, 3, 3),
+        'sy':  torch.tensor([[-1., -2., -1.], [0., 0., 0.], [1., 2., 1.]], device=dev).view(1, 1, 3, 3),
+    }
 
 
 def _is_frame_valid(frame: np.ndarray) -> bool:
-    """Return False if the frame looks corrupt (blurry, flat, or extreme brightness)."""
-    blur = _compute_blur_score(frame)
-    grad = _compute_gradient_score(frame)
-    if blur < BLUR_THRESHOLD or grad < GRADIENT_THRESHOLD:
-        logging.warning("Frame discarded: blur=%.1f grad=%.1f", blur, grad)
-        return False
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    brightness = float(np.mean(gray))
-    if brightness < BRIGHTNESS_MIN or brightness > BRIGHTNESS_MAX:
-        logging.warning("Frame discarded: brightness=%.1f", brightness)
-        return False
+    """GPU quality check: Laplacian blur var, Sobel gradient var, brightness."""
+    if _qk is None:
+        return True  # kernels not yet ready — pass through until startup completes
+    with torch.no_grad():
+        t = torch.from_numpy(frame).float().cuda()          # CPU→GPU once: HWC BGR float32
+        gray = (0.114 * t[:, :, 0] + 0.587 * t[:, :, 1] + 0.299 * t[:, :, 2])
+        gray = gray.unsqueeze(0).unsqueeze(0)               # [1, 1, H, W]
+
+        lap = F.conv2d(gray, _qk['lap'], padding=1)
+        blur_var = lap.var().item()
+        if blur_var < BLUR_THRESHOLD:
+            logging.warning("Frame discarded: blur_var=%.1f", blur_var)
+            return False
+
+        gx = F.conv2d(gray, _qk['sx'], padding=1)
+        gy = F.conv2d(gray, _qk['sy'], padding=1)
+        grad_var = (gx ** 2 + gy ** 2).sqrt().var().item()
+        if grad_var < GRADIENT_THRESHOLD:
+            logging.warning("Frame discarded: grad_var=%.1f", grad_var)
+            return False
+
+        brightness = gray.mean().item()
+        if brightness < BRIGHTNESS_MIN or brightness > BRIGHTNESS_MAX:
+            logging.warning("Frame discarded: brightness=%.1f", brightness)
+            return False
     return True
 
 
@@ -163,7 +178,7 @@ def _stack_frames(reference: np.ndarray, preroll: deque) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# RTSP reader thread -- keeps only the latest fresh frame
+# RTSP reader thread — GPU H.264 decode via NVDEC (h264_cuvid)
 # ---------------------------------------------------------------------------
 # Each slot: (sequence_id: int, frame: np.ndarray, capture_ts: datetime)
 _latest_slot: tuple | None = None
@@ -171,34 +186,66 @@ _frame_seq: int = 0
 _frame_lock = threading.Lock()
 
 
-def _open_stream(url: str) -> cv2.VideoCapture:
-    """Open RTSP stream with TCP transport and a single-frame buffer."""
-    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
-    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    return cap
+def _probe_stream_dims(url: str) -> tuple[int, int]:
+    """Return (width, height) by probing the RTSP stream. Falls back to 1920×1080."""
+    try:
+        out = subprocess.check_output(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', url],
+            timeout=15, stderr=subprocess.DEVNULL,
+        )
+        for s in json.loads(out).get('streams', []):
+            if s.get('codec_type') == 'video':
+                return int(s['width']), int(s['height'])
+    except Exception as e:
+        logging.warning("ffprobe failed (%s), assuming 1920×1080", e)
+    return 1920, 1080
 
 
-def _reader_thread(url: str) -> None:
-    """Daemon thread: continuously reads frames and stores only the latest one."""
+def _reader_thread(url: str, width: int, height: int) -> None:
+    """Daemon thread: decode H.264 on GPU via h264_cuvid (NVDEC), store latest frame."""
     global _latest_slot, _frame_seq
+    frame_bytes = width * height * 3
     backoff = 1.0
-    cap = _open_stream(url)
-    logging.info("RTSP reader thread connected (TCP)")
+
     while True:
-        ret, frame = cap.read()
-        if ret and frame is not None:
-            ts = datetime.now()
-            with _frame_lock:
-                _frame_seq += 1
-                _latest_slot = (_frame_seq, frame, ts)
+        cmd = [
+            'ffmpeg', '-loglevel', 'error',
+            '-hwaccel', 'cuda',
+            '-c:v', 'h264_cuvid',        # NVDEC hardware decoder — H.264 decode on GPU
+            '-rtsp_transport', 'tcp',
+            '-i', url,
+            '-f', 'rawvideo',
+            '-pix_fmt', 'bgr24',
+            'pipe:1',
+        ]
+        proc = None
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            logging.info("RTSP reader connected via NVDEC (h264_cuvid) %dx%d", width, height)
             backoff = 1.0
-        else:
-            logging.warning("Frame read failed -- reconnecting in %.1fs", backoff)
-            cap.release()
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 30.0)
-            cap = _open_stream(url)
+            while True:
+                raw = proc.stdout.read(frame_bytes)
+                if len(raw) < frame_bytes:
+                    break  # stream ended or error — reconnect
+                # np.frombuffer gives a read-only view; .copy() makes it writable
+                frame = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 3).copy()
+                ts = datetime.now()
+                with _frame_lock:
+                    _frame_seq += 1
+                    _latest_slot = (_frame_seq, frame, ts)
+        except Exception as e:
+            logging.warning("NVDEC reader error: %s", e)
+        finally:
+            if proc is not None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except Exception:
+                    pass
+
+        logging.warning("RTSP disconnected, retrying in %.0fs", backoff)
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 30.0)
 
 
 def _get_latest_slot() -> tuple | None:
@@ -235,6 +282,8 @@ def iou(boxA: list, boxB: list) -> float:
 
 # yolov8s for production accuracy; device=0 is GPU exposed via CUDA_VISIBLE_DEVICES=1
 model = YOLO("yolov8s.pt")
+_init_quality_kernels()    # needs CUDA already initialised by YOLO above
+logging.info("GPU quality-check kernels ready on cuda:0")
 
 object_last_seen: dict = {}
 detection_buffer: dict = defaultdict(int)
@@ -264,7 +313,10 @@ _record_start_ts: datetime | None = None
 _record_missing: int = 0
 _record_cooldown: dict = {}    # obj_id -> datetime of last clip end
 
-t = threading.Thread(target=_reader_thread, args=(RTSP_URL,), daemon=True)
+_stream_w, _stream_h = _probe_stream_dims(RTSP_URL)
+logging.info("Stream dimensions probed: %dx%d", _stream_w, _stream_h)
+
+t = threading.Thread(target=_reader_thread, args=(RTSP_URL, _stream_w, _stream_h), daemon=True)
 t.start()
 
 # ---------------------------------------------------------------------------
