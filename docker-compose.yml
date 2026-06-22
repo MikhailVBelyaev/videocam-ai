@@ -11,6 +11,8 @@ services:
       - CUDA_DEVICE_ORDER=PCI_BUS_ID
       - CAMERA_ID=cam1
       - RTSP_URL=rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101
+      - OMP_NUM_THREADS=1    # PyTorch worker threads; inference is GPU-bound so 1 is sufficient
+      - MKL_NUM_THREADS=1    # MKL backend thread cap (same reason)
     runtime: nvidia
     restart: always
     logging:
