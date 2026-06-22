@@ -48,15 +48,18 @@ SAME_SCENE_THRESHOLD = 5       # phash distance <= this for same tracking ID -> 
 
 # Video clip recording
 RECORD_MIN_PERSIST_FRAMES = 5  # one higher than MIN_PERSIST_FRAMES — clip is a heavier commit than a JPG
-PREROLL_FRAMES = 45            # ring-buffer depth: ~3-4s pre-roll at 10-15 fps inference rate
+INFERENCE_FPS_MAX = 8          # cap main-loop rate; cuts per-frame CPU work (quality checks + pre-roll copies)
+_INFERENCE_INTERVAL = 1.0 / INFERENCE_FPS_MAX
+
+PREROLL_FRAMES = 24            # ring-buffer depth: 3s pre-roll at INFERENCE_FPS_MAX
 MAX_CLIP_SECONDS = 30          # hard per-clip cap; bounds disk use for loitering objects
 CLIP_COOLDOWN_SECONDS = 60     # gap between clips for the same tracking ID
-RECORD_FPS = 12.0              # fps written into mp4 header (midpoint of expected 10-15 fps inference rate)
+RECORD_FPS = float(INFERENCE_FPS_MAX)  # match video header to actual capture rate
 FOURCC_STR = "mp4v"            # MPEG-4 Part2 — only codec reliably encodable by the opencv wheel + HTML5-playable
 
 # Frame quality thresholds
 BLUR_THRESHOLD = 30.0
-GRADIENT_THRESHOLD = 5.0
+GRADIENT_THRESHOLD = 500.0     # scaled for cv2.Sobel (Sobel values ~8x larger than np.gradient)
 BRIGHTNESS_MIN = 15.0          # mean grayscale below this -> dark/corrupt
 BRIGHTNESS_MAX = 245.0         # mean grayscale above this -> overexposed/corrupt
 
@@ -82,14 +85,18 @@ STACKING_FLAG_FILE = Path("/app/output/.frame_stacking")
 
 def _compute_blur_score(image_bgr: np.ndarray) -> float:
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    lap = cv2.Laplacian(gray, cv2.CV_32F)   # float32 is 2× faster than float64
+    _, std = cv2.meanStdDev(lap)            # SIMD-optimised variance via std²
+    return float(std[0][0] ** 2)
 
 
 def _compute_gradient_score(image_bgr: np.ndarray) -> float:
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    gx, gy = np.gradient(gray.astype(np.float64))
-    magnitude = np.sqrt(gx**2 + gy**2)
-    return float(magnitude.var())
+    # cv2.Sobel is 8-10× faster than np.gradient: SIMD, float32, no temp 16 MB float64 arrays
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    _, std = cv2.meanStdDev(cv2.magnitude(gx, gy))
+    return float(std[0][0] ** 2)
 
 
 def _is_frame_valid(frame: np.ndarray) -> bool:
@@ -264,19 +271,26 @@ t.start()
 # Main inference loop
 # ---------------------------------------------------------------------------
 
+_last_inference_ts: float = 0.0
+
 while True:
+    # Enforce INFERENCE_FPS_MAX to reduce CPU load from per-frame quality checks and pre-roll copies.
+    # The reader thread still runs at full camera rate; we just process only the latest frame each tick.
+    now = time.monotonic()
+    gap = _INFERENCE_INTERVAL - (now - _last_inference_ts)
+    if gap > 0:
+        time.sleep(gap)
+
     slot = _get_latest_slot()
     if slot is None or slot[0] == _last_consumed_seq:
-        time.sleep(0.01)
+        time.sleep(0.005)
         continue
 
+    _last_inference_ts = time.monotonic()
     seq_id, frame, capture_ts = slot
 
-    # Log if inference is slower than capture rate (helps diagnose missed fast-moving objects)
     if seq_id > _last_consumed_seq + 1:
-        logging.debug(
-            "Skipped %d frames (inference slower than capture)", seq_id - _last_consumed_seq - 1
-        )
+        logging.debug("Skipped %d frames (throttled)", seq_id - _last_consumed_seq - 1)
 
     _last_consumed_seq = seq_id
 
