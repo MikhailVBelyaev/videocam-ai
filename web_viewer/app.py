@@ -14,12 +14,27 @@ VIDEO_PER_PAGE = 6
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _date_dirs():
+def _cameras():
+    """Return sorted list of camera dirs (non-date subdirs of OUTPUT_DIR)."""
     try:
-        entries = os.listdir(OUTPUT_DIR)
+        result = []
+        for e in sorted(os.listdir(OUTPUT_DIR)):
+            if os.path.isdir(os.path.join(OUTPUT_DIR, e)) and not e.startswith('.'):
+                try:
+                    datetime.strptime(e, "%Y-%m-%d")
+                except ValueError:
+                    result.append(e)
+        return result
+    except OSError:
+        return []
+
+
+def _date_dirs(camera):
+    base = os.path.join(OUTPUT_DIR, camera)
+    try:
         valid = []
-        for e in entries:
-            if os.path.isdir(os.path.join(OUTPUT_DIR, e)):
+        for e in os.listdir(base):
+            if os.path.isdir(os.path.join(base, e)):
                 try:
                     datetime.strptime(e, "%Y-%m-%d")
                     valid.append(e)
@@ -30,8 +45,8 @@ def _date_dirs():
         return []
 
 
-def _videos_for_date(date_str):
-    folder = os.path.join(OUTPUT_DIR, date_str)
+def _videos_for_date(camera, date_str):
+    folder = os.path.join(OUTPUT_DIR, camera, date_str)
     try:
         files = [
             f for f in os.listdir(folder)
@@ -44,8 +59,8 @@ def _videos_for_date(date_str):
         return []
 
 
-def _images_for_date(date_str):
-    folder = os.path.join(OUTPUT_DIR, date_str)
+def _images_for_date(camera, date_str):
+    folder = os.path.join(OUTPUT_DIR, camera, date_str)
     try:
         files = [
             f for f in os.listdir(folder)
@@ -129,25 +144,32 @@ def index():
 
 @app.route("/raw")
 def raw_gallery():
-    dates = _date_dirs()
+    cameras = _cameras()
+    selected_cam = request.args.get("camera", cameras[0] if cameras else "")
+    dates = _date_dirs(selected_cam) if selected_cam else []
     selected = request.args.get("date", dates[0] if dates else "")
     page = max(1, int(request.args.get("page", 1)))
 
-    all_images = _images_for_date(selected) if selected else []
+    all_images = _images_for_date(selected_cam, selected) if selected_cam and selected else []
     total = len(all_images)
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
     page = min(page, total_pages)
     page_images = all_images[(page - 1) * PER_PAGE: page * PER_PAGE]
 
+    cam_opts = "".join(
+        f'<option value="{c}" {"selected" if c == selected_cam else ""}>{c}</option>'
+        for c in cameras
+    )
+    cam_sel = f'<select onchange="location=\'/raw?camera=\'+this.value">{cam_opts}</select>'
     date_opts = "".join(
         f'<option value="{d}" {"selected" if d == selected else ""}>{d}</option>'
         for d in dates
     )
-    date_sel = f'<select onchange="location=\'/raw?date=\'+this.value">{date_opts}</select>'
+    date_sel = f'<select onchange="location=\'/raw?camera={selected_cam}&date=\'+this.value">{date_opts}</select>'
 
     cards = ""
     for fname in page_images:
-        img_url = f"/{selected}/{fname}"
+        img_url = f"/{selected_cam}/{selected}/{fname}"
         ts = fname[6:25] if len(fname) > 25 else fname
         cards += f"""
         <div class="card">
@@ -161,13 +183,14 @@ def raw_gallery():
     if not cards:
         cards = '<div class="empty">No images for this date.</div>'
 
-    pager = _pager(page, total_pages, f"/raw?date={selected}&x=1")
+    pager = _pager(page, total_pages, f"/raw?camera={selected_cam}&date={selected}&x=1")
+    selectors = f"{cam_sel} &nbsp; {date_sel}" if len(cameras) > 1 else date_sel
 
     return Response(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Raw — videocam-ai</title>
 <style>{_CSS}</style></head><body>
 {_nav("Raw")}
-<div class="title"><span>All captures — {total} frames for {selected}</span>{date_sel}</div>
+<div class="title"><span>All captures — {total} frames for {selected}</span>{selectors}</div>
 <div class="grid">{cards}</div>
 {pager}
 {_LB_HTML}
@@ -177,28 +200,34 @@ def raw_gallery():
 
 @app.route("/videos")
 def videos_page():
-    dates = _date_dirs()
+    cameras = _cameras()
+    selected_cam = request.args.get("camera", cameras[0] if cameras else "")
+    dates = _date_dirs(selected_cam) if selected_cam else []
     selected = request.args.get("date", dates[0] if dates else "")
     page = max(1, int(request.args.get("page", 1)))
 
-    all_videos = _videos_for_date(selected) if selected else []
+    all_videos = _videos_for_date(selected_cam, selected) if selected_cam and selected else []
     total = len(all_videos)
     total_pages = max(1, (total + VIDEO_PER_PAGE - 1) // VIDEO_PER_PAGE)
     page = min(page, total_pages)
     page_videos = all_videos[(page - 1) * VIDEO_PER_PAGE: page * VIDEO_PER_PAGE]
 
+    cam_opts = "".join(
+        f'<option value="{c}" {"selected" if c == selected_cam else ""}>{c}</option>'
+        for c in cameras
+    )
+    cam_sel = f'<select onchange="location=\'/videos?camera=\'+this.value">{cam_opts}</select>'
     date_opts = "".join(
         f'<option value="{d}" {"selected" if d == selected else ""}>{d}</option>'
         for d in dates
     )
-    date_sel = f'<select onchange="location=\'/videos?date=\'+this.value">{date_opts}</select>'
+    date_sel = f'<select onchange="location=\'/videos?camera={selected_cam}&date=\'+this.value">{date_opts}</select>'
 
     cards = ""
     for fname in page_videos:
-        video_url = f"/{selected}/{fname}"
-        # fname format: clip_YYYY-MM-DD HH:MM:SS_id{N}_{class}.mp4
+        video_url = f"/{selected_cam}/{selected}/{fname}"
         ts = fname[5:24] if len(fname) > 24 else fname
-        size_bytes = os.path.getsize(os.path.join(OUTPUT_DIR, selected, fname))
+        size_bytes = os.path.getsize(os.path.join(OUTPUT_DIR, selected_cam, selected, fname))
         size_mb = f"{size_bytes / 1_048_576:.1f} MB"
         cards += f"""
         <div class="card">
@@ -215,13 +244,14 @@ def videos_page():
     if not cards:
         cards = '<div class="empty">No video clips for this date.</div>'
 
-    pager = _pager(page, total_pages, f"/videos?date={selected}&x=1")
+    pager = _pager(page, total_pages, f"/videos?camera={selected_cam}&date={selected}&x=1")
+    selectors = f"{cam_sel} &nbsp; {date_sel}" if len(cameras) > 1 else date_sel
 
     return Response(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Videos — videocam-ai</title>
 <style>{_CSS}</style></head><body>
 {_nav("Videos")}
-<div class="title"><span>Clips — {total} videos for {selected}</span>{date_sel}</div>
+<div class="title"><span>Clips — {total} videos for {selected}</span>{selectors}</div>
 <div class="grid">{cards}</div>
 {pager}
 </body></html>""", mimetype="text/html")
@@ -229,11 +259,14 @@ def videos_page():
 
 @app.route("/admin")
 def admin_page():
-    dates = _date_dirs()
+    cameras = _cameras()
+    latest_cam = cameras[0] if cameras else None
+    dates = _date_dirs(latest_cam) if latest_cam else []
     latest = dates[0] if dates else None
-    imgs = _images_for_date(latest)[:5] if latest else []
+    imgs = _images_for_date(latest_cam, latest)[:5] if latest_cam and latest else []
     links = "".join(
-        f'<li><a href="/{latest}/{f}" style="color:#4a8cdf">{f}</a></li>' for f in imgs
+        f'<li><a href="/{latest_cam}/{latest}/{f}" style="color:#4a8cdf">{f}</a></li>'
+        for f in imgs
     ) or "<li>No images</li>"
 
     return Response(f"""<!doctype html>

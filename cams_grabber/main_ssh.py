@@ -25,7 +25,8 @@ logging.getLogger("ultralytics").setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 # Tunable constants
 # ---------------------------------------------------------------------------
-RTSP_URL = "rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101"
+RTSP_URL  = os.getenv("RTSP_URL",  "rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101")
+CAMERA_ID = os.getenv("CAMERA_ID", "cam1")
 
 ANIMAL_CLASSES = {
     "bird", "cat", "dog", "horse", "sheep", "cow",
@@ -204,7 +205,7 @@ def _get_latest_slot() -> tuple | None:
 
 def get_daily_output_dir() -> Path:
     date_str = datetime.now().strftime("%Y-%m-%d")
-    output_dir = Path("output") / date_str
+    output_dir = Path("output") / CAMERA_ID / date_str
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
@@ -414,7 +415,7 @@ while True:
             if filename.exists():
                 logging.info("Saved %s", filename)
                 _last_save_hash[obj_id] = ph
-                web_frame = Path("output") / "frame_for_web.jpg"
+                web_frame = Path("output") / CAMERA_ID / "frame_for_web.jpg"
                 cv2.imwrite(str(web_frame), annotated)
             else:
                 logging.error("Failed to save %s", filename)

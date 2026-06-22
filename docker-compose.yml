@@ -1,12 +1,66 @@
 services:
-  cams_grabber:
+  cams_grabber_cam1:
     build: ./cams_grabber
-    container_name: cams_grabber
+    container_name: cams_grabber_cam1
     volumes:
-      - ./output:/app/output   # persistent folder
+      - ./output:/app/output
       - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
     environment:
-      - CUDA_VISIBLE_DEVICES=1   # force GPU 1
+      - CUDA_VISIBLE_DEVICES=1
+      - CAMERA_ID=cam1
+      - RTSP_URL=rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101
+    runtime: nvidia
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "main_ssh.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Camera 2 — add RTSP_URL when camera is physically connected, then:
+  #   docker compose --profile cam2 up -d cams_grabber_cam2
+  cams_grabber_cam2:
+    profiles: ["cam2"]
+    build: ./cams_grabber
+    container_name: cams_grabber_cam2
+    volumes:
+      - ./output:/app/output
+      - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
+    environment:
+      - CUDA_VISIBLE_DEVICES=1
+      - CAMERA_ID=cam2
+      - RTSP_URL=rtsp://user:pass@192.168.100.X:554/Streaming/Channels/101
+    runtime: nvidia
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "main_ssh.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Camera 3 — add RTSP_URL when camera is physically connected, then:
+  #   docker compose --profile cam3 up -d cams_grabber_cam3
+  cams_grabber_cam3:
+    profiles: ["cam3"]
+    build: ./cams_grabber
+    container_name: cams_grabber_cam3
+    volumes:
+      - ./output:/app/output
+      - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
+    environment:
+      - CUDA_VISIBLE_DEVICES=1
+      - CAMERA_ID=cam3
+      - RTSP_URL=rtsp://user:pass@192.168.100.Y:554/Streaming/Channels/101
     runtime: nvidia
     restart: always
     logging:

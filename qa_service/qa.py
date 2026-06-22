@@ -175,11 +175,21 @@ def analyze(img_path: Path, model: YOLO) -> dict:
     m = _ID_RE.search(img_path.name)
     tracking_id = int(m.group(1)) if m else None
 
+    # Key on (camera, tracking_id) to avoid ID collisions across cameras
+    rel_parts = img_path.relative_to(OUTPUT_DIR).parts
+    try:
+        datetime.strptime(rel_parts[0], "%Y-%m-%d")
+        camera = "legacy"  # old single-camera layout: output/YYYY-MM-DD/
+    except (ValueError, IndexError):
+        camera = rel_parts[0] if rel_parts else "unknown"
+    hash_key = (camera, tracking_id) if tracking_id is not None else None
+
     ph = _phash(img)
-    prev_hash = _id_last_hash.get(tracking_id) if tracking_id is not None else None
+    prev_hash = _id_last_hash.get(hash_key) if hash_key is not None else None
     hash_distance = int(ph - prev_hash) if prev_hash is not None else None
     no_change = (hash_distance is not None) and (hash_distance <= SAME_ID_DUP_THRESHOLD)
-    _id_last_hash[tracking_id] = ph
+    if hash_key is not None:
+        _id_last_hash[hash_key] = ph
 
     yolo_results = model.predict(img, verbose=False, device=0, conf=CONF_THRESHOLD)
     detections = []
@@ -258,22 +268,33 @@ def _compute_window(results: list, minutes: int) -> dict:
 def _image_files(seen: set) -> list:
     files = []
     try:
-        for date_dir in sorted(OUTPUT_DIR.iterdir()):
-            if not date_dir.is_dir():
+        for entry in sorted(OUTPUT_DIR.iterdir()):
+            if not entry.is_dir() or entry.name.startswith('.'):
                 continue
+            # Top-level date dir (old pre-multi-camera format)
             try:
-                datetime.strptime(date_dir.name, "%Y-%m-%d")
+                datetime.strptime(entry.name, "%Y-%m-%d")
+                date_dirs = [entry]
             except ValueError:
-                continue
-            for f in sorted(date_dir.iterdir()):
-                if (
-                    f.is_file()
-                    and f.suffix.lower() in {".jpg", ".jpeg", ".png"}
-                    and not f.name.startswith(".")
-                    and "_debug" not in f.name
-                    and str(f) not in seen
-                ):
-                    files.append(f)
+                # Camera dir — descend one more level
+                try:
+                    date_dirs = sorted(d for d in entry.iterdir()
+                                       if d.is_dir() and not d.name.startswith('.'))
+                except OSError:
+                    continue
+
+            for date_dir in date_dirs:
+                try:
+                    datetime.strptime(date_dir.name, "%Y-%m-%d")
+                except ValueError:
+                    continue
+                for f in sorted(date_dir.iterdir()):
+                    if (f.is_file()
+                            and f.suffix.lower() in {".jpg", ".jpeg", ".png"}
+                            and not f.name.startswith(".")
+                            and "_debug" not in f.name
+                            and str(f) not in seen):
+                        files.append(f)
     except OSError:
         pass
     return files
