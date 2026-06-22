@@ -1,9 +1,12 @@
 import os
 import time
+import json
 import psutil
 import requests
 import subprocess
 from datetime import datetime
+
+SYSINFO_PATH = "/app/output/.sysinfo.json"
 
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -24,7 +27,7 @@ def send_message(text: str):
         print(f"⚠️ Exception while sending report: {e}")
 
 def get_gpu_stats():
-    """Get GPU temperature, utilization, and VRAM usage."""
+    """Return (display_string, structured_list) for all GPUs."""
     try:
         output = subprocess.check_output(
             [
@@ -36,17 +39,18 @@ def get_gpu_stats():
         ).strip()
 
         gpu_info = []
+        gpu_list = []
         for line in output.splitlines():
             try:
-                idx, temp, util, mem_used, mem_total = line.split(", ")
-                gpu_info.append(
-                    f"GPU{idx}: {temp}°C | Util {util}% | VRAM {mem_used}/{mem_total} MB"
-                )
+                idx, temp, util, mem_used, mem_total = [x.strip() for x in line.split(",")]
+                gpu_info.append(f"GPU{idx}: {temp}°C | Util {util}% | VRAM {mem_used}/{mem_total} MB")
+                gpu_list.append({"index": idx, "temp": temp, "util": util,
+                                  "mem_used": mem_used, "mem_total": mem_total})
             except Exception:
                 gpu_info.append(f"GPU parse error: {line}")
-        return "\n".join(gpu_info)
+        return "\n".join(gpu_info), gpu_list
     except Exception as e:
-        return f"GPU info error: {e}"
+        return f"GPU info error: {e}", []
 
 def get_ups_status():
     """Read UPS status from a host-generated file (avoid upower in Docker)."""
@@ -79,16 +83,47 @@ def get_cpu_temps():
     except Exception as e:
         return f"CPU temp info error: {e}"
 
+def _write_sysinfo(data: dict):
+    try:
+        with open(SYSINFO_PATH, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"Failed to write sysinfo: {e}")
+
+
 def main():
     """Main monitoring loop (runs every hour)."""
     while True:
         cpu = psutil.cpu_percent(interval=1)
         ram = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
-        gpu = get_gpu_stats()
+        gpu_str, gpu_list = get_gpu_stats()
         ups = get_ups_status()
         cpu_temps = get_cpu_temps()
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Extract numeric CPU temp for JSON
+        cpu_temp_val = None
+        for token in cpu_temps.split():
+            if token.endswith("°C"):
+                try:
+                    cpu_temp_val = float(token.replace("°C", ""))
+                except ValueError:
+                    pass
+
+        _write_sysinfo({
+            "timestamp": timestamp,
+            "cpu_percent": cpu,
+            "cpu_temp": cpu_temp_val,
+            "ram_percent": round(ram.percent, 1),
+            "ram_used_mb": ram.used // (1024 ** 2),
+            "ram_total_mb": ram.total // (1024 ** 2),
+            "disk_percent": round(disk.percent, 1),
+            "disk_used_gb": disk.used // (1024 ** 3),
+            "disk_total_gb": disk.total // (1024 ** 3),
+            "gpus": gpu_list,
+            "ups": ups,
+        })
 
         msg = (
             f"🖥 System Report - {timestamp}\n"
@@ -96,7 +131,7 @@ def main():
             f"{cpu_temps}\n"
             f"RAM Usage: {ram.percent}% ({ram.used // (1024**2)}MB / {ram.total // (1024**2)}MB)\n"
             f"Disk Usage: {disk.percent}% ({disk.used // (1024**3)}GB / {disk.total // (1024**3)}GB)\n"
-            f"{gpu}\n"
+            f"{gpu_str}\n"
             f"{ups}"
         )
 

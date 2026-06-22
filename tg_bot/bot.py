@@ -697,7 +697,44 @@ def _query_container_states():
     return states
 
 
-def _format_state_message(states):
+SYSINFO_FILE = os.path.join(OUTPUT_DIR, ".sysinfo.json")
+
+
+def _read_sysinfo() -> dict | None:
+    try:
+        with open(SYSINFO_FILE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _format_sysinfo(s: dict) -> str:
+    ts = s.get("timestamp", "?")
+    cpu = s.get("cpu_percent", "?")
+    cpu_temp = s.get("cpu_temp")
+    ram_pct = s.get("ram_percent", "?")
+    ram_used = s.get("ram_used_mb", "?")
+    ram_total = s.get("ram_total_mb", "?")
+    disk_pct = s.get("disk_percent", "?")
+    disk_used = s.get("disk_used_gb", "?")
+    disk_total = s.get("disk_total_gb", "?")
+    gpus = s.get("gpus", [])
+
+    temp_str = f" | {cpu_temp}°C" if cpu_temp is not None else ""
+    lines = [
+        f"", f"🖥 *Hardware* (as of {ts})",
+        f"CPU: {cpu}%{temp_str}",
+        f"RAM: {ram_pct}% ({ram_used} / {ram_total} MB)",
+        f"Disk: {disk_pct}% ({disk_used} / {disk_total} GB)",
+    ]
+    for g in gpus:
+        lines.append(
+            f"GPU{g['index']}: {g['temp']}°C | {g['util']}% | {g['mem_used']}/{g['mem_total']} MB"
+        )
+    return "\n".join(lines)
+
+
+def _format_state_message(states, sysinfo: dict | None) -> str:
     lines = ["*Container Status*", ""]
     for s in states:
         status = s["status"]
@@ -705,6 +742,8 @@ def _format_state_message(states):
         lines.append(
             f"{emoji} *{s['name']}* — {status} | health: {s['health']} | {_format_uptime(s['started_at'])}"
         )
+    if sysinfo:
+        lines.append(_format_sysinfo(sysinfo))
     return "\n".join(lines)
 
 
@@ -715,7 +754,8 @@ async def state_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if states is None:
         await update.message.reply_text("Container runtime unavailable. Docker socket not mounted?")
         return
-    await update.message.reply_text(_format_state_message(states), parse_mode="Markdown")
+    sysinfo = _read_sysinfo()
+    await update.message.reply_text(_format_state_message(states, sysinfo), parse_mode="Markdown")
 
 
 # ---------------------------------------------------------------------------
