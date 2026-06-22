@@ -1,36 +1,68 @@
 # Next Actions
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 ## Current State
 
-All services deployed and healthy. QA dashboard live at port 8083.
-No blocking issues. System is capturing frames 24/7.
+All services deployed and healthy. CPU at ~172% (down from ~273%).
+GPU 1 at ~51% utilization doing real YOLO work.
+Multi-camera infrastructure ready; cam2/cam3 await physical cameras.
 
-## Potential next improvements
+## Active next task
 
-1. **QA: persist stats across restarts** — currently stats_log is in-memory (lost on restart,
-   re-seeded from last 50 files). Could write to a SQLite file in the output volume.
+**Full GPU-to-GPU pipeline via GStreamer + NVMM** (user-requested, pending):
 
-2. **output/ cleanup** — no automatic cleanup implemented. `output/` grows unbounded.
-   Add a cron job or service to remove folders older than N days.
+Currently frames still travel CPU→GPU on each inference tick (6 MB memcpy).
+H.264 decode is on GPU (NVDEC) but the raw pixels are downloaded to CPU RAM
+before being uploaded again for quality checks and YOLO.
 
-3. **Second camera** — architecture supports it but would need a second cams_grabber instance
-   with its own RTSP_URL and output subfolder. QA service would naturally pick up both.
+Goal: keep decoded frames in GPU memory end-to-end:
+```
+NVDEC decode → NV12 in GPU memory
+    → CUDA color convert → BGR in GPU memory (no CPU download)
+    → PyTorch quality check (already GPU) — zero copy
+    → YOLO inference — zero copy
+    → CPU download only when saving a frame (rare)
+```
 
-4. **QA: chart / timeline** — the dashboard shows table stats but no time-series chart.
-   Could add a simple Chart.js line chart showing quality rate over time.
+Implementation path:
+- Replace ffmpeg subprocess with **GStreamer pipeline** using `nvv4l2decoder` (NVDEC) + `nvvidconv` (CUDA color convert)
+- Keep frames as GStreamer NVMM buffers (GPU memory) between decode and processing
+- Extract GPU pointer → PyTorch CUDA tensor without CPU download
+- Requires `python3-gst` + GStreamer NVDEC plugins in the Docker image
+- Image save still needs one GPU→CPU download (for `cv2.imwrite`)
 
-5. **sys_monitor: watch cams_grabber connection** — currently sys_monitor does not alert
-   when cams_grabber loses the RTSP stream. Could add a check on the output/ last-modified
-   time to detect capture stalls.
+## Other potential improvements
+
+1. **Add cam2/cam3** — fill in `RTSP_URL` in docker-compose.yml, activate profile. No code changes needed.
+
+2. **QA: persist stats across restarts** — stats_log is in-memory; re-seeded from last 50 files on restart.
+   Could write to SQLite in the output volume.
+
+3. **output/ cleanup** — no automatic cleanup. Add cron to remove folders older than N days.
+
+4. **sys_monitor: watch cams_grabber connection** — alert when cams_grabber loses RTSP stream
+   (check output/<cam>/ last-modified time).
+
+5. **QA: chart / timeline** — add Chart.js time-series to the dashboard.
+
+## Completed (2026-06-22)
+
+- Multi-camera output layout (`output/<cam_id>/YYYY-MM-DD/`)
+- cams_grabber_cam1/cam2/cam3 Docker Compose profiles
+- GPU assignment fix: NVIDIA_VISIBLE_DEVICES + NVIDIA_DRIVER_CAPABILITIES=video
+- H.264 decode moved to NVDEC (ffmpeg subprocess, h264_cuvid)
+- Quality checks moved to PyTorch CUDA (Laplacian + Sobel on GPU)
+- Main loop throttled to 8fps; pre-roll 45→24 frames
+- tg_bot /state shows hardware stats from sys_monitor .sysinfo.json
+- tg_bot multi-camera support; web_viewer camera selector
+- CPU: ~273% → ~172%; GPU1 utilization: 9% → 51%
 
 ## Completed (2026-06-21)
 
 - QA service created, deployed, and working
 - Capture quality fixes: reader thread, TCP RTSP, frame validation, yolov8s upgrade
 - CLAUDE.md + docs/ARCHITECTURE.md + docs/QA_SERVICE_RUNBOOK.md created
-- PROJECT_STATUS_MEMORY.md and DEVELOPMENT_LOG.md updated
 
 ## Prior Priority
 

@@ -1,5 +1,78 @@
 # Development Log
 
+## 2026-06-22 — Multi-camera + GPU pipeline + CPU reduction
+
+### Multi-camera output layout
+
+Changed output structure from `output/YYYY-MM-DD/` to `output/<camera_id>/YYYY-MM-DD/`.
+`cams_grabber/main_ssh.py`: `get_daily_output_dir()` now prepends `CAMERA_ID` env var (default `cam1`).
+`frame_for_web.jpg` path also uses camera subdir.
+
+All consumers (tg_bot, web_viewer, qa_service) updated to discover cameras dynamically
+by scanning `output/` for non-date subdirs. Zero code changes needed to activate cam2/cam3.
+
+`docker-compose.yml`: service renamed `cams_grabber` → `cams_grabber_cam1`; cam2/cam3 added
+with `profiles: ["cam2"]`/`["cam3"]` so they only start when explicitly activated.
+
+### GPU assignment fix
+
+Old: `CUDA_VISIBLE_DEVICES=1` and `CUDA_VISIBLE_DEVICES=2` in docker-compose.
+Problem: `CUDA_VISIBLE_DEVICES` uses CUDA internal device ordering, which does not
+match `nvidia-smi` PCI bus order. Both ML containers were landing on GPU 0 (the display GPU).
+
+Fix: switched to `NVIDIA_VISIBLE_DEVICES=1`/`2` (Docker NVIDIA runtime env var, uses PCI bus
+order matching `nvidia-smi`). Kept `CUDA_DEVICE_ORDER=PCI_BUS_ID` as a belt-and-suspenders
+guard for code inside the container.
+
+### H.264 decode moved to GPU (NVDEC)
+
+Previous reader thread: `cv2.VideoCapture` with OpenCV's built-in FFmpeg backend (CPU software decode).
+
+New reader thread: `subprocess.Popen(['ffmpeg', '-hwaccel', 'cuda', '-c:v', 'h264_cuvid', ...])`
+piping raw bgr24 frames. `h264_cuvid` = NVDEC hardware decoder; all H.264 entropy decode and
+motion compensation run on GPU 1's NVDEC unit.
+
+Required `NVIDIA_DRIVER_CAPABILITIES=video,compute,utility` in docker-compose — without `video`,
+the container toolkit does not inject `libnvcuvid.so.1` and NVDEC is unavailable.
+
+Stream dimensions probed once at startup via `ffprobe` (fallback: 1920×1080).
+
+### Frame quality checks moved to PyTorch CUDA
+
+Previous: `cv2.Laplacian` + `np.gradient` (then optimised to `cv2.Sobel`) — all CPU.
+
+New: three 3×3 CUDA convolution kernels (Laplacian, Sobel-X, Sobel-Y) allocated on
+`cuda:0` after YOLO loads. Each frame is uploaded once (`torch.from_numpy(frame).cuda().float()`)
+and blur variance, gradient magnitude variance, and brightness computed entirely on GPU.
+
+Key fix: `.cuda().float()` not `.float().cuda()` — the wrong order allocated a 24 MB
+float32 tensor on CPU before transfer (4× PCIe waste).
+
+### CPU throttle + pre-roll reduction
+
+Added `INFERENCE_FPS_MAX = 8` rate cap to main loop (was ~15fps free-running).
+Reduced `PREROLL_FRAMES` 45→24 (still 3s at 8fps), `RECORD_FPS` 12→8.
+
+### Results
+
+| Metric | Before | After |
+|---|---|---|
+| cams_grabber CPU | ~273% | ~172% |
+| GPU 1 utilization | 9% | 51% |
+| GPU 1 VRAM | 490 MB | ~540 MB |
+| H.264 decode | CPU | NVDEC (GPU 1) |
+| Quality checks | CPU | CUDA (GPU 1) |
+
+### tg_bot `/state` hardware stats
+
+`sys_monitor/monitor.py`: writes `.sysinfo.json` to `output/` each monitoring cycle.
+JSON includes CPU %, CPU temp, RAM, disk, per-GPU stats, UPS state.
+
+`tg_bot/bot.py`: `/state` command reads `.sysinfo.json` and appends hardware report
+after container status table.
+
+---
+
 ## 2026-06-21 — Capture quality fixes + QA service
 
 ### Root cause analysis and capture fixes

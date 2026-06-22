@@ -1,41 +1,45 @@
 # Project Status Memory
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
-## Latest Update (2026-06-21) — QA Service + Capture Quality Fixes
+## Latest Update (2026-06-22) — Multi-camera + GPU pipeline + CPU reduction
 
-All five services running on `user@oldgamepc.tail7c033b.ts.net`:
+All services running on `user@oldgamepc.tail7c033b.ts.net`:
 
 | Service | Port | Status |
 |---|---|---|
-| `cams_grabber` | — | Running — YOLOv8s, reader thread, RTSP/TCP, GPU 1 |
-| `tg_bot` | — | Running — Telegram delivery + `/admin` `/state` |
-| `sys_monitor` | — | Running — hardware health + UPS |
-| `web_viewer` | 8082 | Running — Flask gallery |
+| `cams_grabber_cam1` | — | Running — YOLOv8s, NVDEC decode, GPU 1 |
+| `tg_bot` | — | Running — Telegram delivery + `/admin` `/state` (hardware stats) |
+| `sys_monitor` | — | Running — hardware health + UPS, writes `.sysinfo.json` |
+| `web_viewer` | 8082 | Running — Flask gallery, multi-camera selector |
 | `qa_service` | 8083 | Running — QA dashboard, GPU 2 |
 
-**QA Service (new):**
-- `qa_service/` container: YOLOv8n on GPU 2, watches `output/` for new frames
-- Per-frame: blur, gradient, brightness, per-ID perceptual hash, YOLOv8n re-detection
-- PASS = good quality + object visible + vehicle moved; WARN = stationary (normal); FAIL = quality problem
-- Two-tab Flask dashboard at port 8083:
-  - Dashboard tab: 5 time-window summary cards + stats table
-  - Gallery tab: 5 images/page, prev/next, jump-to-page, lightbox
-- Fixed: `numpy<2` pin (torch 2.2.2+cu118 incompatible with numpy 2.x)
-- `CUDA_DEVICE_ORDER=PCI_BUS_ID` ensures stable GPU 2 assignment
+**Multi-camera infrastructure:**
+- Output layout changed to `output/<camera_id>/YYYY-MM-DD/` (was `output/YYYY-MM-DD/`)
+- Service renamed `cams_grabber` → `cams_grabber_cam1`; cam2/cam3 gated behind Docker Compose profiles `["cam2"]`/`["cam3"]`
+- All consumers (tg_bot, web_viewer, qa_service) discover cameras dynamically by scanning `output/` for non-date subdirs — no code changes needed to add cam2/cam3
+- Per-camera state files: `output/<cam>/.last_sent_file`
 
-**Capture quality fixes (same session):**
-- Reader thread + single-slot buffer replaces tight loop (fixes stale-frame / FIFO lag problem)
-- RTSP over TCP (fixes H.264 composite frames from UDP packet loss)
-- Frame quality gate before YOLO: blur ≥ 30 AND gradient ≥ 5
-- Production model upgraded: yolov8n → yolov8s
-- Persistence requirement: 4 consecutive frames before saving
-- Save raw frame (primary) + annotated debug copy separately
+**GPU assignment fix:**
+- Switched from `CUDA_VISIBLE_DEVICES` to `NVIDIA_VISIBLE_DEVICES` in docker-compose
+- `CUDA_VISIBLE_DEVICES` uses CUDA internal ordering (can differ from nvidia-smi); `NVIDIA_VISIBLE_DEVICES` uses PCI bus order — both ML containers now reliably land on their intended GPUs
+- Added `NVIDIA_DRIVER_CAPABILITIES=video,compute,utility` to inject NVDEC library (`libnvcuvid.so`)
 
-**Documentation added:**
-- `CLAUDE.md` — full project guidance for Claude Code
-- `docs/ARCHITECTURE.md` — system design, data flow, GPU assignments, frame lifecycle
-- `docs/QA_SERVICE_RUNBOOK.md` — QA dashboard operating guide
+**CPU reduction (main goal):**
+- H.264 decode moved from CPU (OpenCV software) to GPU via NVDEC (`ffmpeg -hwaccel cuda -c:v h264_cuvid` subprocess)
+- Frame quality checks (blur/gradient/brightness) moved from CPU (OpenCV Sobel) to GPU (PyTorch CUDA Laplacian + Sobel kernels)
+- Main loop throttled to 8fps (`INFERENCE_FPS_MAX = 8`); pre-roll reduced 45→24 frames
+- Result: `cams_grabber_cam1` CPU dropped from ~273% → ~172%; GPU 1 utilization up from 9% → 51%
+
+**tg_bot `/state` enhancement:**
+- Shows hardware stats (CPU %, temp, RAM, disk, per-GPU util/VRAM/temp) from `.sysinfo.json`
+- `sys_monitor` writes `.sysinfo.json` to `output/` each cycle; tg_bot reads it on `/state`
+
+## Prior Update (2026-06-21) — QA Service + Capture Quality Fixes
+
+- QA service created, deployed, working on GPU 2
+- Capture quality fixes: reader thread, TCP RTSP, frame validation, yolov8s upgrade
+- `CLAUDE.md` + `docs/ARCHITECTURE.md` + `docs/QA_SERVICE_RUNBOOK.md` created
 
 ## Prior Update
 

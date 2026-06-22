@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 ## System overview
 
@@ -9,61 +9,68 @@ IP Camera (RTSP H.264, 1920×1080)
         │
         │ TCP stream (avoids UDP packet loss / composite frames)
         ▼
-┌─────────────────────────────────────────────────┐
-│  cams_grabber  (GPU 1 — YOLOv8s)               │
-│                                                  │
-│  Reader thread ──► single-slot buffer            │
-│        │          (always fresh frame)           │
-│        ▼                                         │
-│  Quality gate (blur + gradient)                  │
-│        │                                         │
-│        ▼                                         │
-│  model.track() ──► persist 4 frames              │
-│        │           cooldown 20 s / ID            │
-│        ▼                                         │
-│  Save raw frame  +  debug annotated copy         │
-└──────────────────────┬──────────────────────────┘
-                       │  output/YYYY-MM-DD/*.jpg
-           ┌───────────┼───────────┬──────────────┐
-           ▼           ▼           ▼              ▼
-      ┌─────────┐ ┌──────────┐ ┌───────┐ ┌────────────┐
-      │ tg_bot  │ │web_viewer│ │  qa_  │ │sys_monitor │
-      │(no GPU) │ │(no GPU)  │ │service│ │(all GPUs)  │
-      │port —   │ │port 8082 │ │GPU 2  │ │port —      │
-      └────┬────┘ └──────────┘ │8083   │ └────────────┘
-           │                   └───────┘
-           ▼
-      Telegram channel
+┌──────────────────────────────────────────────────────┐
+│  cams_grabber_cam1  (GPU 1 — NVDEC + YOLOv8s)       │
+│                                                       │
+│  Reader thread                                        │
+│    ffmpeg -hwaccel cuda -c:v h264_cuvid ──►           │
+│    bgr24 pipe ──► single-slot buffer                  │
+│        │          (H.264 decode on GPU via NVDEC)     │
+│        ▼                                              │
+│  GPU quality gate (PyTorch CUDA)                      │
+│    Laplacian blur var + Sobel gradient var            │
+│    + brightness — all on cuda:0                       │
+│        │                                              │
+│        ▼                                              │
+│  model.track() ──► persist 4 frames                   │
+│        │           cooldown 20 s / ID                 │
+│        ▼                                              │
+│  Save raw frame  +  debug annotated copy              │
+└───────────────────────┬──────────────────────────────┘
+                        │  output/cam1/YYYY-MM-DD/*.jpg
+            ┌───────────┼───────────┬──────────────┐
+            ▼           ▼           ▼              ▼
+       ┌─────────┐ ┌──────────┐ ┌───────┐ ┌────────────┐
+       │ tg_bot  │ │web_viewer│ │  qa_  │ │sys_monitor │
+       │(no GPU) │ │(no GPU)  │ │service│ │(all GPUs)  │
+       │port —   │ │port 8082 │ │GPU 2  │ │port —      │
+       └────┬────┘ └──────────┘ │8083   │ └────────────┘
+            │                   └───────┘
+            ▼
+       Telegram channel
 ```
 
 ## Services
 
-### cams_grabber
+### cams_grabber_cam1
 
 **Role:** sole producer of frames. All other services are consumers.
+Runs once per camera; cam2/cam3 start identical containers via Docker Compose profiles.
 
 **Two-thread design:**
 ```
-Reader thread                    Main thread
-─────────────                    ───────────
-cap.read() loop                  while True:
-  if ret:                          slot = _latest_slot
-    with _frame_lock:              if slot is None or seq == _last_seq:
-      _frame_seq += 1                sleep(0.01); continue
-      _latest_slot = (seq,          seq, frame, ts = slot
-                      frame, ts)    if not _is_frame_valid(frame): continue
-  else:                             results = model.track(frame, ...)
-    reconnect w/ backoff            if detection criteria met: save
+Reader thread                       Main thread (capped at INFERENCE_FPS_MAX=8)
+─────────────                       ─────────────────────────────────────────
+ffmpeg subprocess:                  while True:
+  -hwaccel cuda                       throttle to 8 fps
+  -c:v h264_cuvid                     slot = _latest_slot
+  NVDEC decodes H.264 on GPU          if slot is None or seq == _last_seq:
+  pipe: raw bgr24 bytes                 sleep(0.005); continue
+  np.frombuffer → numpy array         seq, frame, ts = slot
+  store in _latest_slot               _is_frame_valid(frame)  ← GPU (PyTorch CUDA)
+  reconnect w/ backoff                  if invalid: continue
+                                      results = model.track(frame, ...)
+                                      if detection criteria met: save
 ```
 
 The reader thread discards all but the latest frame. The main thread never
-processes a stale frame from the FIFO buffer — a key fix for the "garbage image"
-production problem.
+processes a stale frame — a key fix for the "garbage image" production problem.
 
-**Frame validation before YOLO:**
-- `_compute_blur_score()` — Laplacian variance, threshold 30.0
-- `_compute_gradient_score()` — gradient magnitude variance, threshold 5.0
-- Frames failing either check are skipped (likely corrupt / H.264 decode artefact)
+**Frame validation before YOLO (GPU):**
+- Laplacian blur variance ≥ 30.0 — `F.conv2d` on `cuda:0`
+- Sobel gradient magnitude variance ≥ 500.0 — `F.conv2d` on `cuda:0`
+- Brightness (mean) 15–245 — `tensor.mean()` on `cuda:0`
+- Frame is uploaded once (`torch.from_numpy(frame).cuda().float()`); all checks run on GPU
 
 **Detection persistence:**
 - Object must appear in `MIN_PERSIST_FRAMES = 4` consecutive frames before saving
@@ -158,38 +165,53 @@ Uses `NVIDIA_VISIBLE_DEVICES=all` to see all three GPUs.
 ## GPU assignments
 
 ```
-nvidia-smi index │ Service       │ CUDA env
-─────────────────┼───────────────┼──────────────────────────────────────────────
-GPU 0            │ X11 / desktop │ (no container)
-GPU 1            │ cams_grabber  │ CUDA_VISIBLE_DEVICES=1
-GPU 2            │ qa_service    │ CUDA_VISIBLE_DEVICES=2, CUDA_DEVICE_ORDER=PCI_BUS_ID
+nvidia-smi index │ PCI bus   │ Service             │ Docker env
+─────────────────┼───────────┼─────────────────────┼────────────────────────────────────────────────
+GPU 0            │ 01:00.0   │ X11 / desktop       │ (no container)
+GPU 1            │ 02:00.0   │ cams_grabber_cam1   │ NVIDIA_VISIBLE_DEVICES=1, CUDA_DEVICE_ORDER=PCI_BUS_ID
+GPU 2            │ 03:00.0   │ qa_service          │ NVIDIA_VISIBLE_DEVICES=2, CUDA_DEVICE_ORDER=PCI_BUS_ID
 ```
 
-`CUDA_VISIBLE_DEVICES=N` makes the container's CUDA runtime see exactly 1 GPU
-(reported as device 0 inside the container). Without `CUDA_DEVICE_ORDER=PCI_BUS_ID`,
-CUDA's internal ordering may differ from `nvidia-smi`. The qa_service adds the
-`PCI_BUS_ID` flag explicitly so its `CUDA_VISIBLE_DEVICES=2` reliably maps to
-nvidia-smi GPU 2.
+**`NVIDIA_VISIBLE_DEVICES`** is the Docker NVIDIA runtime env var — it uses the same PCI bus
+order as `nvidia-smi`. Use this (not `CUDA_VISIBLE_DEVICES`) to route containers to the right GPU.
+
+`CUDA_DEVICE_ORDER=PCI_BUS_ID` is set as belt-and-suspenders inside the container so any
+CUDA code that reads device indices sees the same order as `nvidia-smi`.
+
+**`NVIDIA_DRIVER_CAPABILITIES=video,compute,utility`** is required on containers that use NVDEC.
+Without `video`, the container toolkit does not inject `libnvcuvid.so.1` and `h264_cuvid` fails.
 
 ---
 
 ## Data flow
 
 ```
-Camera ──RTSP/TCP──► cams_grabber ──writes──► output/YYYY-MM-DD/*.jpg
-                                                    │
-                    ┌───────────────────────────────┤ (shared Docker volume, read-only)
-                    │                               │
-                    ▼                               ▼
-             tg_bot reads,                  qa_service reads,
-             sends to Telegram              validates, updates stats_log
-                                                    │
-                                            web_viewer reads,
-                                            serves gallery
+Camera ──RTSP/TCP──► cams_grabber_cam1 ──writes──► output/cam1/YYYY-MM-DD/*.jpg
+                                                         │
+                    ┌────────────────────────────────────┤ (shared Docker volume, read-only)
+                    │                                    │
+                    ▼                                    ▼
+             tg_bot reads,                       qa_service reads,
+             sends to Telegram                   validates, updates stats_log
+                                                         │
+                                                 web_viewer reads,
+                                                 serves gallery
 ```
 
 The `output/` directory is the **only** shared contract between services.
 Its structure must not change without updating all consumer services.
+
+**Multi-camera layout:** each camera writes to its own subdir.
+Consumers discover cameras by listing non-date entries in `output/`:
+```
+output/
+  cam1/
+    2026-06-22/
+      frame_*.jpg
+    .last_sent_file   ← tg_bot cursor for cam1
+  cam2/               ← populated when cam2 container runs
+  .sysinfo.json       ← written by sys_monitor, read by tg_bot /state
+```
 
 ---
 
@@ -209,12 +231,14 @@ Its structure must not change without updating all consumer services.
 
 ```
 1. Camera emits H.264 NAL units over RTSP/TCP
-2. FFmpeg (via OpenCV CAP_FFMPEG) decodes to BGR frames
+2. ffmpeg subprocess (-hwaccel cuda -c:v h264_cuvid) decodes on GPU (NVDEC)
+   → raw bgr24 bytes piped to Python → numpy array
 3. Reader thread stores latest frame in _latest_slot (discards older)
-4. Main thread validates: blur ≥ 30 AND gradient ≥ 5
+4. Main thread (throttled to 8fps) validates on GPU (PyTorch CUDA):
+   blur var ≥ 30, Sobel gradient var ≥ 500, brightness 15–245
 5. YOLOv8s tracks objects: car / truck / bus / person
 6. If tracking ID held ≥ 4 consecutive frames AND cooldown expired:
-   a. Save raw frame as .jpg (the "primary" file)
+   a. Save raw frame as .jpg to output/cam1/YYYY-MM-DD/ (the "primary" file)
    b. Save annotated copy as _debug.jpg
 7. tg_bot picks up primary .jpg within next 5 s tick, sends to Telegram
 8. qa_service picks up primary .jpg within next 2 s poll:
@@ -244,10 +268,11 @@ repeat of what the production detector already said.
 
 ## Known limitations
 
-- Single camera only. Adding a second camera requires a second `cams_grabber` instance
-  with a different `RTSP_URL` and a separate output subfolder.
-- The reader thread reconnects on stream loss (exponential backoff 1 s → 30 s) but
-  does not alert — sys_monitor does not currently watch cams_grabber's connection state.
+- Frames still cross CPU RAM on each inference tick (ffmpeg pipe → numpy). H.264 decode
+  is on GPU (NVDEC) but pixels are downloaded to CPU before the next GPU upload for quality
+  checks and YOLO. A GStreamer + NVMM pipeline would eliminate this CPU hop.
+- The reader thread reconnects on stream loss (exponential backoff 1 s → 30 s) but does not
+  alert — sys_monitor does not watch cams_grabber's connection state.
 - `output/` grows unbounded. No automatic cleanup is implemented.
-- qa_service stores up to 5000 results in memory. On restart the stats_log is re-seeded
-  from the last 50 files on disk. History older than 50 frames is lost on restart.
+- qa_service stores up to 5000 results in memory. On restart stats_log is re-seeded from the
+  last 50 files on disk. History older than 50 frames is lost on restart.
