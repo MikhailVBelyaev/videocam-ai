@@ -105,7 +105,9 @@ def _is_frame_valid(frame: np.ndarray) -> bool:
     if _qk is None:
         return True  # kernels not yet ready — pass through until startup completes
     with torch.no_grad():
-        t = torch.from_numpy(frame).float().cuda()          # CPU→GPU once: HWC BGR float32
+        # Upload uint8 (6 MB) to GPU first, then convert to float32 on GPU (not CPU).
+        # Wrong order (.float().cuda()) would allocate 24 MB on CPU before transfer.
+        t = torch.from_numpy(frame).cuda().float()          # HWC BGR float32 on GPU
         gray = (0.114 * t[:, :, 0] + 0.587 * t[:, :, 1] + 0.299 * t[:, :, 2])
         gray = gray.unsqueeze(0).unsqueeze(0)               # [1, 1, H, W]
 
