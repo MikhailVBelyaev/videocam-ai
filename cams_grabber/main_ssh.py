@@ -55,10 +55,10 @@ SAME_SCENE_THRESHOLD = 5       # phash distance <= this for same tracking ID -> 
 
 # Video clip recording
 RECORD_MIN_PERSIST_FRAMES = 5  # one higher than MIN_PERSIST_FRAMES — clip is a heavier commit than a JPG
-INFERENCE_FPS_MAX = 8          # cap main-loop rate; cuts per-frame CPU work (quality checks + pre-roll copies)
+INFERENCE_FPS_MAX = 15         # cap main-loop rate; limited to camera output rate (~15fps)
 _INFERENCE_INTERVAL = 1.0 / INFERENCE_FPS_MAX
 
-PREROLL_FRAMES = 24            # ring-buffer depth: 3s pre-roll at INFERENCE_FPS_MAX
+PREROLL_FRAMES = 45            # ring-buffer depth: 3s pre-roll at INFERENCE_FPS_MAX
 MAX_CLIP_SECONDS = 30          # hard per-clip cap; bounds disk use for loitering objects
 CLIP_COOLDOWN_SECONDS = 60     # gap between clips for the same tracking ID
 RECORD_FPS = float(INFERENCE_FPS_MAX)  # match video header to actual capture rate
