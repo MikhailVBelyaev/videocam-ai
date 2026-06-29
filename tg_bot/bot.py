@@ -585,6 +585,75 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
+# /last_car  /last_person  /last_animal
+# ---------------------------------------------------------------------------
+
+_ANIMAL_KEYWORDS = [
+    "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe",
+]
+
+
+def _find_last_by_class(keywords: list) -> str | None:
+    """Return the most recently saved primary frame whose name contains any keyword."""
+    best_path = None
+    best_mtime = 0.0
+    for camera in _cameras():
+        for date in _get_dates_for_camera(camera):
+            folder = os.path.join(OUTPUT_DIR, camera, date)
+            try:
+                files = os.listdir(folder)
+            except OSError:
+                continue
+            for f in files:
+                if f.endswith("_debug.jpg") or not f.lower().endswith(IMAGE_EXTENSIONS):
+                    continue
+                if not any(f"_{kw}.jpg" in f.lower() for kw in keywords):
+                    continue
+                path = os.path.join(folder, f)
+                try:
+                    mtime = os.path.getmtime(path)
+                    if mtime > best_mtime:
+                        best_mtime = mtime
+                        best_path = path
+                except OSError:
+                    pass
+    return best_path
+
+
+async def _last_class_command(update: Update, label: str, keywords: list, emoji: str):
+    if not _is_admin_chat(update):
+        return
+    path = await asyncio.to_thread(_find_last_by_class, keywords)
+    if not path:
+        await update.message.reply_text(f"No {label} captured yet.")
+        return
+    fname = os.path.basename(path)
+    try:
+        ts = fname.split("_id")[0].replace("frame_", "")
+        caption = f"{emoji} Last {label}: {ts}"
+    except Exception:
+        caption = f"{emoji} Last {label}"
+    try:
+        await update.message.reply_photo(photo=path, caption=caption)
+    except Exception as e:
+        logger.error(f"Failed to send last {label}: {e}")
+        await update.message.reply_text(f"Error sending image: {e}")
+
+
+async def last_car_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _last_class_command(update, "vehicle", ["vehicle"], "🚗")
+
+
+async def last_person_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _last_class_command(update, "person", ["person"], "🧍")
+
+
+async def last_animal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await _last_class_command(update, "animal", _ANIMAL_KEYWORDS, "🐾")
+
+
+# ---------------------------------------------------------------------------
 # /stacking commands
 # ---------------------------------------------------------------------------
 
@@ -765,6 +834,9 @@ async def state_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 BOT_COMMANDS = [
     BotCommand("admin",        "Summary + latest captured image"),
     BotCommand("state",        "Container health and uptime"),
+    BotCommand("last_car",     "Send last saved vehicle frame"),
+    BotCommand("last_person",  "Send last saved person frame"),
+    BotCommand("last_animal",  "Send last saved animal frame"),
     BotCommand("stacking",     "Show frame stacking state (ON / OFF)"),
     BotCommand("stacking_on",  "Enable nighttime multi-frame stacking"),
     BotCommand("stacking_off", "Disable nighttime multi-frame stacking"),
@@ -786,6 +858,9 @@ def main():
     app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("admin",        admin_command))
     app.add_handler(CommandHandler("state",        state_command))
+    app.add_handler(CommandHandler("last_car",     last_car_command))
+    app.add_handler(CommandHandler("last_person",  last_person_command))
+    app.add_handler(CommandHandler("last_animal",  last_animal_command))
     app.add_handler(CommandHandler("stacking",     stacking_command))
     app.add_handler(CommandHandler("stacking_on",  stacking_on_command))
     app.add_handler(CommandHandler("stacking_off", stacking_off_command))
