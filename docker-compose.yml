@@ -116,7 +116,8 @@ services:
       - ./tg_bot/.env
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-    gpus: all
+      - NVIDIA_DRIVER_CAPABILITIES=utility   # only nvidia-smi needed; no compute/video
+    runtime: nvidia
     restart: always
     logging:
       driver: "json-file"
