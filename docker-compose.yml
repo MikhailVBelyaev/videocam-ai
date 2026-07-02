@@ -119,6 +119,12 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=utility   # only nvidia-smi needed; no compute/video
     runtime: nvidia
     restart: always
+    healthcheck:
+      test: ["CMD", "nvidia-smi", "-L"]
+      interval: 5m
+      timeout: 10s
+      retries: 2
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
