@@ -1,61 +1,73 @@
 # Next Actions
 
-Last updated: 2026-06-22
+Last updated: 2026-07-02
 
 ## Current State
 
-All services deployed and healthy. CPU at ~172% (down from ~273%).
-GPU 1 at ~51% utilization doing real YOLO work.
+All services deployed and healthy. sys_monitor has a healthcheck for nvidia-smi
+auto-recovery. New tg_bot commands: /last_car, /last_person, /last_animal.
 Multi-camera infrastructure ready; cam2/cam3 await physical cameras.
 
 ## Active next task
 
-**Full GPU-to-GPU pipeline via GStreamer + NVMM** (user-requested, pending):
+**Full GPU-to-GPU pipeline via GStreamer NVMM** (partial — GStreamer done, zero-copy pending):
 
-Currently frames still travel CPU→GPU on each inference tick (6 MB memcpy).
-H.264 decode is on GPU (NVDEC) but the raw pixels are downloaded to CPU RAM
-before being uploaded again for quality checks and YOLO.
+GStreamer in-process NVDEC pipeline is implemented and replaces the old ffmpeg subprocess.
+Frames still travel NVDEC → CPU RAM (cudadownload) → GPU on each tick (6 MB memcpy).
 
-Goal: keep decoded frames in GPU memory end-to-end:
+Goal: keep decoded frames in GPU memory end-to-end (zero CPU download):
 ```
-NVDEC decode → NV12 in GPU memory
+NVDEC decode → NV12 in GPU memory (NVMM buffer)
     → CUDA color convert → BGR in GPU memory (no CPU download)
     → PyTorch quality check (already GPU) — zero copy
     → YOLO inference — zero copy
     → CPU download only when saving a frame (rare)
 ```
 
-Implementation path:
-- Replace ffmpeg subprocess with **GStreamer pipeline** using `nvv4l2decoder` (NVDEC) + `nvvidconv` (CUDA color convert)
-- Keep frames as GStreamer NVMM buffers (GPU memory) between decode and processing
-- Extract GPU pointer → PyTorch CUDA tensor without CPU download
-- Requires `python3-gst` + GStreamer NVDEC plugins in the Docker image
+What's still needed:
+- Extract GPU pointer from GStreamer NVMM buffer → PyTorch CUDA tensor (no `cudadownload`)
+- Manual letterbox + coordinate rescaling for YOLO tracker input
 - Image save still needs one GPU→CPU download (for `cv2.imwrite`)
 
 ## Other potential improvements
 
 1. **Add cam2/cam3** — fill in `RTSP_URL` in docker-compose.yml, activate profile. No code changes needed.
 
-2. **QA: persist stats across restarts** — stats_log is in-memory; re-seeded from last 50 files on restart.
-   Could write to SQLite in the output volume.
+2. **output/ cleanup** — no automatic cleanup. Add cron to remove folders older than N days.
 
-3. **output/ cleanup** — no automatic cleanup. Add cron to remove folders older than N days.
-
-4. **sys_monitor: watch cams_grabber connection** — alert when cams_grabber loses RTSP stream
+3. **sys_monitor: watch cams_grabber connection** — alert when cams_grabber loses RTSP stream
    (check output/<cam>/ last-modified time).
 
-5. **QA: chart / timeline** — add Chart.js time-series to the dashboard.
+4. **QA: chart / timeline** — add Chart.js time-series to the dashboard.
+
+5. **Security fixes** — see `DEEP_ANALYSIS_2026-06-29.md` for prioritised plan. Critical:
+   rotate camera credentials out of git; fix path traversal in qa_service `/img/` route.
+
+## Completed (2026-07-01 / 2026-07-02)
+
+- tg_bot: `/last_car`, `/last_person`, `/last_animal` commands (find latest frame by class)
+- sys_monitor: `runtime: nvidia` + `NVIDIA_DRIVER_CAPABILITIES=utility` (fixes nvidia-smi in container)
+- sys_monitor: healthcheck `nvidia-smi -L` every 5 min — auto-restarts on NVML degradation
+- Security audit report: `DEEP_ANALYSIS_2026-06-29.md` (11 findings, fix plan)
+
+## Completed (2026-06-22 → 2026-06-29)
+
+- GStreamer in-process NVDEC pipeline (replaces ffmpeg subprocess, eliminates Unix pipe IPC)
+- INFERENCE_FPS_MAX: 8 → 15; PREROLL_FRAMES: 24 → 45
+- OMP_NUM_THREADS=1 / MKL_NUM_THREADS=1 — eliminate idle PyTorch worker threads
+- PyTorch CPU thread limit: 2 (torch.set_num_threads)
+- sys_monitor: `.sysinfo.json` refresh interval 3600 s → 60 s
 
 ## Completed (2026-06-22)
 
 - Multi-camera output layout (`output/<cam_id>/YYYY-MM-DD/`)
 - cams_grabber_cam1/cam2/cam3 Docker Compose profiles
 - GPU assignment fix: NVIDIA_VISIBLE_DEVICES + NVIDIA_DRIVER_CAPABILITIES=video
-- H.264 decode moved to NVDEC (ffmpeg subprocess, h264_cuvid)
+- H.264 decode moved to NVDEC (via GStreamer, in-process)
 - Quality checks moved to PyTorch CUDA (Laplacian + Sobel on GPU)
-- Main loop throttled to 8fps; pre-roll 45→24 frames
 - tg_bot /state shows hardware stats from sys_monitor .sysinfo.json
 - tg_bot multi-camera support; web_viewer camera selector
+- QA stats persisted to SQLite (WAL mode); survives restarts
 - CPU: ~273% → ~172%; GPU1 utilization: 9% → 51%
 
 ## Completed (2026-06-21)

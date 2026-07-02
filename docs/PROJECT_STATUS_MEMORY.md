@@ -1,8 +1,47 @@
 # Project Status Memory
 
-Last updated: 2026-06-22
+Last updated: 2026-07-02
 
-## Latest Update (2026-06-22) — Multi-camera + GPU pipeline + CPU reduction
+## Latest Update (2026-07-02) — sys_monitor GPU fix + tg_bot class commands + security audit
+
+All services running on `user@oldgamepc.tail7c033b.ts.net`:
+
+| Service | Port | Status |
+|---|---|---|
+| `cams_grabber_cam1` | — | Running — YOLOv8s, GStreamer NVDEC, GPU 1, 15fps |
+| `tg_bot` | — | Running — Telegram delivery, /last_car /last_person /last_animal |
+| `sys_monitor` | — | Running — hardware health, healthcheck for nvidia-smi auto-recovery |
+| `web_viewer` | 8082 | Running — Flask gallery, /raw /videos /admin, multi-camera |
+| `qa_service` | 8083 | Running — QA dashboard, GPU 2, SQLite persistence |
+
+**sys_monitor GPU fix:**
+- `nvidia-smi` inside containers degrades to `NVML_ERROR_UNKNOWN` after ~18h uptime
+  (CUDA compute in other containers is unaffected; only the management library path breaks)
+- Root fix: switched from `gpus: all` to `runtime: nvidia` + explicit `NVIDIA_DRIVER_CAPABILITIES=utility`
+- Recovery fix: Docker healthcheck `nvidia-smi -L` every 5 min, 2 retries → auto-restart
+- Deployed via explicit `docker rm` + `docker compose up -d sys_monitor` (not compose recreate)
+
+**tg_bot new commands:**
+- `/last_car` — finds and sends most recent `_vehicle.jpg` across all cameras/dates
+- `/last_person` — finds and sends most recent `_person.jpg`
+- `/last_animal` — finds and sends most recent animal frame (bird, cat, dog, etc.)
+- Admin-only; scans output/<cam>/<date>/ by mtime; captions timestamp from filename
+
+**Security audit:**
+- Full static analysis in `DEEP_ANALYSIS_2026-06-29.md` (11 findings: 2 high, 4 medium, 5 low)
+- Critical: camera credentials in git history; path traversal in qa_service `/img/` route
+- Fix plan prioritised in the report; no code changes made during read-only audit
+
+## Prior Update (2026-06-22 → 2026-06-29) — GStreamer + CPU thread tuning
+
+- GStreamer in-process NVDEC pipeline deployed (replaces ffmpeg subprocess)
+  No Unix pipe IPC; GStreamer buffers delivered directly to reader thread
+- `INFERENCE_FPS_MAX` raised 8 → 15; `PREROLL_FRAMES` 24 → 45 (3s buffer at 15fps)
+- `OMP_NUM_THREADS=1` / `MKL_NUM_THREADS=1` — eliminates idle OpenMP threads in PyTorch
+- PyTorch CPU thread limit: 2 via `torch.set_num_threads(2)`
+- `sys_monitor`: `.sysinfo.json` refresh 3600s → 60s for timely `/state` data
+
+## Prior Update (2026-06-22) — Multi-camera + GPU pipeline + CPU reduction
 
 All services running on `user@oldgamepc.tail7c033b.ts.net`:
 

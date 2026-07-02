@@ -1,6 +1,6 @@
 # Architecture
 
-Last updated: 2026-06-22
+Last updated: 2026-07-02
 
 ## System overview
 
@@ -49,10 +49,10 @@ Runs once per camera; cam2/cam3 start identical containers via Docker Compose pr
 
 **Two-thread design:**
 ```
-Reader thread                       Main thread (capped at INFERENCE_FPS_MAX=8)
-─────────────                       ─────────────────────────────────────────
+Reader thread                       Main thread (capped at INFERENCE_FPS_MAX=15)
+─────────────                       ──────────────────────────────────────────
 GStreamer pipeline (in-process):    while True:
-  rtspsrc (TCP)                       throttle to 8 fps
+  rtspsrc (TCP)                       throttle to 15 fps
   → rtph264depay                      slot = _latest_slot
   → h264parse                         if slot is None or seq == _last_seq:
   → nvh264dec  ← NVDEC GPU decode       sleep(0.005); continue
@@ -90,29 +90,36 @@ frame_2026-06-21 14:00:41_id9257_vehicle_debug.jpg  ← cv2.imwrite(annotated) d
 **Role:** deliver new captures to Telegram, provide admin insight.
 
 **Send loop (every 5 s):**
-1. Read `.last_sent_file` → know current folder + last sent image
+1. Read `output/<cam>/.last_sent_file` → know current folder + last sent image
 2. List current folder images, sort by mtime (newest first within unsent window)
 3. Filter: skip stale (> `MAX_IMAGE_AGE_SECONDS`), skip `*_debug.jpg`
 4. Skip perceptually similar to last sent (phash distance ≤ `IMAGE_SIMILARITY_THRESHOLD`)
 5. Send up to `MAX_IMAGES_PER_ITERATION` per tick
 6. Advance to next folder if current folder yields 0 sends and is not newest
 
-**State file** `output/.last_sent_file`:
+**State file** `output/<cam>/.last_sent_file` (per-camera):
 ```
 2026-06-21/\n           ← current folder
 ```
 On first start (file missing): initialise to newest image without sending.
+
+**Commands:** `/admin` (summary + latest image), `/state` (container health + hardware),
+`/last_car`, `/last_person`, `/last_animal` (most recent frame of that class),
+`/stacking`, `/stacking_on`, `/stacking_off` (toggle ECC frame stacking).
 
 ### web_viewer
 
 **Role:** human-readable gallery for browsing and reviewing saved frames.
 
 Flask app (port 5000 inside container, mapped to host 8082):
-- `/` — lists `output/YYYY-MM-DD/` folders with image thumbnails
-- `/admin` — JSON summary dashboard, reads `output/triage_summary.json` if present
-- `/YYYY-MM-DD/filename.jpg` — direct static file access (proxied through Flask)
+- `/` → redirect to `/raw`
+- `/raw?camera=cam1&date=YYYY-MM-DD` — paginated image gallery with camera + date selectors
+- `/videos?camera=cam1&date=YYYY-MM-DD` — paginated video clip gallery
+- `/admin` — lists latest 5 images for most recent date (no external JSON dependency)
+- `/<cam>/<date>/<filename>` — static file access via `send_from_directory`
 
-Mounts `output/` read-only. No GPU. No database.
+Mounts `output/` read-only. No GPU. No database. Multi-camera: camera dirs discovered
+dynamically from `output/` (any non-date subdir).
 
 ### qa_service
 
@@ -237,7 +244,7 @@ output/
 2. GStreamer pipeline (in-process): rtspsrc → nvh264dec (NVDEC) decodes on GPU
    → cudadownload brings NV12 (3 MB) to system RAM → cv2.cvtColor → BGR numpy
 3. Reader thread stores latest frame in _latest_slot (discards older)
-4. Main thread (throttled to 8fps) validates on GPU (PyTorch CUDA):
+4. Main thread (throttled to 15fps) validates on GPU (PyTorch CUDA):
    blur var ≥ 30, Sobel gradient var ≥ 500, brightness 15–245
 5. YOLOv8s tracks objects: car / truck / bus / person
 6. If tracking ID held ≥ 4 consecutive frames AND cooldown expired:
@@ -279,5 +286,9 @@ repeat of what the production detector already said.
 - The reader thread reconnects on stream loss (exponential backoff 1 s → 30 s) but does not
   alert — sys_monitor does not watch cams_grabber's connection state.
 - `output/` grows unbounded. No automatic cleanup is implemented.
-- qa_service stores up to 5000 results in memory. On restart stats_log is re-seeded from the
-  last 50 files on disk. History older than 50 frames is lost on restart.
+- qa_service keeps up to 5000 results in an in-memory deque for fast time-window queries.
+  All results are also persisted to SQLite (`output/qa_results.db`, WAL mode) — the full
+  history survives container restarts. On restart the deque is re-seeded from the DB.
+- sys_monitor NVML inside containers can degrade to `NVML_ERROR_UNKNOWN` after extended
+  uptime (CUDA compute in cams_grabber and qa_service is unaffected). A Docker healthcheck
+  (`nvidia-smi -L`, every 5 min) auto-restarts sys_monitor when this happens.
