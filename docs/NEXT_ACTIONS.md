@@ -1,12 +1,22 @@
 # Next Actions
 
-Last updated: 2026-07-02
+Last updated: 2026-07-04
 
 ## Current State
 
 All services deployed and healthy. sys_monitor has a healthcheck for nvidia-smi
 auto-recovery. New tg_bot commands: /last_car, /last_person, /last_animal.
 Multi-camera infrastructure ready; cam2/cam3 await physical cameras.
+
+**Disk cleanup (2026-07-04):** `/` partition was at 94% (5.7 GB free). Root cause: unused
+9 GB `venv/` (never used — everything runs in Docker) + 17.9 GB legacy `output/2026-06-20/-21/-22`
+directories left over from the pre-multi-camera layout (root-owned, invisible to all current
+services since they scan for non-date subdirs as cameras). Both removed; freed to 33 GB.
+Note: Docker's data-root lives on a separate partition (`/mnt/data`, `docker info` →
+`Docker Root Dir`), so `docker system prune` does NOT free space on `/` — don't rely on it
+for the main disk. Added a daily cron (4am) to auto-delete `output/<cam>/<date>/` folders
+older than 3 days (`crontab -l` on the server) — output grows ~7 GB/day/camera with no other
+retention in place.
 
 ## Active next task
 
@@ -32,8 +42,6 @@ What's still needed:
 ## Other potential improvements
 
 1. **Add cam2/cam3** — fill in `RTSP_URL` in docker-compose.yml, activate profile. No code changes needed.
-
-2. **output/ cleanup** — no automatic cleanup. Add cron to remove folders older than N days.
 
 3. **sys_monitor: watch cams_grabber connection** — alert when cams_grabber loses RTSP stream
    (check output/<cam>/ last-modified time).
