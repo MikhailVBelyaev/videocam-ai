@@ -6,7 +6,7 @@ services:
       - ./output:/app/output
       - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
     environment:
-      - NVIDIA_VISIBLE_DEVICES=1                          # GPU 1 by PCI bus order (02:00.0)
+      - NVIDIA_VISIBLE_DEVICES=0                          # x99: GPU0 — constant video processing
       - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility  # 'video' injects libnvcuvid for NVDEC
       - CUDA_DEVICE_ORDER=PCI_BUS_ID
       - CAMERA_ID=cam1
@@ -137,7 +137,7 @@ services:
     volumes:
       - ./output:/app/output:ro
     ports:
-      - "8082:5000"
+      - "18082:5000"
     restart: always
     logging:
       driver: "json-file"
@@ -165,7 +165,7 @@ services:
     ports:
       - "8083:5001"
     environment:
-      - NVIDIA_VISIBLE_DEVICES=2   # GPU 2 by PCI bus order (03:00.0) — dedicated to QA
+      - NVIDIA_VISIBLE_DEVICES=1   # x99: GPU1 (x1-riser card) — analysis/QA (rare fall-off OK here)
       - CUDA_DEVICE_ORDER=PCI_BUS_ID
     runtime: nvidia
     restart: always
