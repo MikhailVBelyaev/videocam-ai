@@ -209,3 +209,9 @@ output/
 qa_data/
 yolov8n.pt
 models/
+
+# Секреты: .env с любым суффиксом (.env.en, .env.pre-*-backup и т.п.)
+# Дыра найдена 2026-08-03 в ITCompanyQA/ITCompanyMedia — правило растиражировано по флоту.
+.env.*
+!.env.example
+!.env.sample
