@@ -2,6 +2,8 @@ services:
   cams_grabber_cam1:
     build: ./cams_grabber
     container_name: cams_grabber_cam1
+    mem_limit: 4g
+    memswap_limit: 4g
     volumes:
       - ./output:/app/output
       - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
@@ -159,6 +161,8 @@ services:
   qa_service:
     build: ./qa_service
     container_name: qa_service
+    mem_limit: 1g
+    memswap_limit: 1g
     volumes:
       - ./output:/app/output:ro
       - ./qa_data:/app/data
