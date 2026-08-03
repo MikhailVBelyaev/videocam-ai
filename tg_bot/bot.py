@@ -48,7 +48,7 @@ STACKING_FLAG_FILE = os.path.join(OUTPUT_DIR, ".frame_stacking")
 BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID") or CHAT_ID
-KEEP_DAYS = 3
+KEEP_DAYS = 2  # retention.py (systemd/cron) is the primary enforcer; this is a backstop
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png")
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".avi", ".mkv")
 
