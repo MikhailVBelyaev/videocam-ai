@@ -215,3 +215,29 @@ models/
 .env.*
 !.env.example
 !.env.sample
+
+# --- Секреты и резервные копии (КЛАСС, не имя) — TASK-042, 2026-08-23 ---
+# Любой файл вида *.bak / *.bak-* / *.bak.N — типичная забытая копия
+# боевого конфига с ключами. Ловим класс целиком, а не конкретное имя.
+*.bak
+*.bak.*
+*.bak-*
+*.backup
+*.old
+*.orig
+*.save
+.env.*
+!.env.example
+!.env.sample
+!*.env.example
+!*.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+id_rsa*
+id_ed25519*
+*.sql.gz
+*.dump
+# --- конец блока TASK-042 ---
