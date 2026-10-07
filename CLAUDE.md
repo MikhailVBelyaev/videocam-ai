@@ -34,7 +34,7 @@ All five services are deployed and running:
 |---|---|---|
 | `cams_grabber` | Running — RTSP capture + YOLOv8s, GPU 1 | — |
 | `tg_bot` | Running — sends new frames to Telegram | — |
-| `sys_monitor` | Running — hardware health monitoring | — |
+| `sys_monitor` | **Retired** (2026-10-07) — replaced by fleet-wide host_agent + infra alerts (ITCompanyInf) | — |
 | `web_viewer` | Running — browse saved frames | 8082 |
 | `qa_service` | Running — QA dashboard + stats | 8083 |
 
