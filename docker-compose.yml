@@ -169,7 +169,7 @@ services:
     ports:
       - "8083:5001"
     environment:
-      - NVIDIA_VISIBLE_DEVICES=1   # x99: GPU1 (x1-riser card) — analysis/QA (rare fall-off OK here)
+      - NVIDIA_VISIBLE_DEVICES=0   # 2026-10-07: all GPU services on GPU0 (owner); GPU1 x1-riser kept free
       - CUDA_DEVICE_ORDER=PCI_BUS_ID
     runtime: nvidia
     restart: always
