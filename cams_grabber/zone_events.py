@@ -25,12 +25,13 @@ DEFAULT_APPROACH_POLYGON = (
 
 # The owner-marked red boundary runs immediately beside the permanently parked
 # vehicle.  Its bottom-centre can geometrically fall on the home side, so this
-# explicit mask wins over the approach polygon.  It is intentionally broad over
-# the planter/vehicle corner: neither is a valid walking/drive-in approach.
+# explicit mask wins over the approach polygon.  The actual detector box spans
+# almost the entire right edge at night (and can be reclassified as truck/bus),
+# so this is a rectangular parking sector rather than a narrow contour around a
+# single detected box.  It is not a valid arrival path to alert on.
 DEFAULT_EXCLUSION_POLYGONS = (
     (
-        (0.82, 0.35), (1.00, 0.35), (1.00, 1.00), (0.85, 1.00),
-        (0.94, 0.90), (0.88, 0.75), (0.82, 0.68),
+        (0.79, 0.32), (1.00, 0.32), (1.00, 1.00), (0.79, 1.00),
     ),
 )
 

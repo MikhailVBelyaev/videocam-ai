@@ -51,13 +51,13 @@ class ZoneGeometryTests(unittest.TestCase):
     def test_parked_car_exclusion_wins_over_approach_polygon(self):
         gate = ApproachEventGate(
             polygon=((0, 0.5), (1, 0.5), (1, 1), (0, 1)),
-            exclusion_polygons=(((0.75, 0.5), (1, 0.5), (1, 1), (0.75, 1)),),
+            exclusion_polygons=(((0.75, 0.3), (1, 0.3), (1, 1), (0.75, 1)),),
             min_inside_frames=1,
             warmup_seconds=0,
         )
         now = datetime(2026, 10, 27, 10, 0, 0)
         outside = [80, 10, 95, 30]
-        parked = [80, 50, 95, 90]
+        parked = [80, 40, 100, 90]
         self.assertIsNone(gate.observe(1, "car", outside, 100, 100, now))
         self.assertIsNone(gate.observe(1, "car", parked, 100, 100, now + timedelta(seconds=1)))
 

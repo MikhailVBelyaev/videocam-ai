@@ -19,8 +19,9 @@ and the existing dated-folder retention were kept intact.
   delivery, and added `/menu` / `/stats` owner controls.
 - The first live evidence showed a parked vehicle false-positive at the
   right-hand planter corner: its bounding-box ground point was inside the
-  owner's red boundary. Retained the evidence/history, then added an explicit
-  higher-priority exclusion polygon for that fixed corner. No Telegram message,
+  owner's red boundary. Retained the evidence/history, then expanded the
+  higher-priority exclusion to the entire right-hand parking sector after a
+  night box was found to exceed the initial narrow contour. No Telegram message,
   image, or local archive artefact was deleted.
 - Added focused `tests/test_zone_events.py` tests. They pass under local
   Python 3.9. Existing test modules require Python 3.10+ due to pre-existing
