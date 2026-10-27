@@ -14,9 +14,12 @@ the owner on 2026-10-27. It is stored in normalised coordinates in
 start it is copied to `output/<camera>/zone_config.json`; future manual/UI
 edits must change that persisted file, not the image.
 
-The polygon intentionally excludes the public road and the usual parked-car
-area. Its bottom-centre bounding-box test approximates where an object touches
-the ground, which is more stable than a box centre under perspective.
+The approach polygon excludes the public road. A separate `exclusion_polygons`
+mask has priority for the usual parked-car/planter corner; this is necessary
+because the parked car's bottom-centre can otherwise be geometrically inside
+the red boundary. Its bottom-centre bounding-box test approximates where an
+object touches the ground, which is more stable than a box centre under
+perspective.
 
 ## Data contracts
 

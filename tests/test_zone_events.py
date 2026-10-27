@@ -48,6 +48,19 @@ class ZoneGeometryTests(unittest.TestCase):
         self.assertIsNone(gate.observe(1, "car", [40, 5, 60, 30], 100, 100, now))
         self.assertIsNone(gate.observe(2, "bench", [40, 50, 60, 80], 100, 100, now))
 
+    def test_parked_car_exclusion_wins_over_approach_polygon(self):
+        gate = ApproachEventGate(
+            polygon=((0, 0.5), (1, 0.5), (1, 1), (0, 1)),
+            exclusion_polygons=(((0.75, 0.5), (1, 0.5), (1, 1), (0.75, 1)),),
+            min_inside_frames=1,
+            warmup_seconds=0,
+        )
+        now = datetime(2026, 10, 27, 10, 0, 0)
+        outside = [80, 10, 95, 30]
+        parked = [80, 50, 95, 90]
+        self.assertIsNone(gate.observe(1, "car", outside, 100, 100, now))
+        self.assertIsNone(gate.observe(1, "car", parked, 100, 100, now + timedelta(seconds=1)))
+
     def test_nearby_reidentified_object_is_suppressed(self):
         gate = ApproachEventGate(
             polygon=((0, 0.5), (1, 0.5), (1, 1), (0, 1)), min_inside_frames=1, warmup_seconds=0

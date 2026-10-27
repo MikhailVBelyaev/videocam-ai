@@ -23,6 +23,17 @@ DEFAULT_APPROACH_POLYGON = (
     (0.83, 0.67), (0.88, 0.75), (0.94, 0.90), (1.00, 1.00),
 )
 
+# The owner-marked red boundary runs immediately beside the permanently parked
+# vehicle.  Its bottom-centre can geometrically fall on the home side, so this
+# explicit mask wins over the approach polygon.  It is intentionally broad over
+# the planter/vehicle corner: neither is a valid walking/drive-in approach.
+DEFAULT_EXCLUSION_POLYGONS = (
+    (
+        (0.82, 0.35), (1.00, 0.35), (1.00, 1.00), (0.85, 1.00),
+        (0.94, 0.90), (0.88, 0.75), (0.82, 0.68),
+    ),
+)
+
 ALERT_CLASSES = frozenset({
     "person", "bicycle", "motorcycle", "car", "truck", "bus",
     "bird", "cat", "dog", "horse", "sheep", "cow",
@@ -76,6 +87,7 @@ class ApproachEventGate:
         nearby_cooldown_seconds: float = 45.0,
         nearby_distance: float = 0.12,
         alert_classes=None,
+        exclusion_polygons=DEFAULT_EXCLUSION_POLYGONS,
     ):
         self.polygon = tuple(polygon)
         self.min_inside_frames = min_inside_frames
@@ -83,6 +95,7 @@ class ApproachEventGate:
         self.nearby_cooldown_seconds = nearby_cooldown_seconds
         self.nearby_distance = nearby_distance
         self.alert_classes = frozenset(alert_classes or ALERT_CLASSES)
+        self.exclusion_polygons = tuple(tuple(poly) for poly in exclusion_polygons)
         self.started_at: datetime | None = None
         self._tracks: dict[int, dict] = {}
         self._recent: list[ZoneEvent] = []
@@ -116,7 +129,10 @@ class ApproachEventGate:
             self.started_at = timestamp
 
         point = ground_point(box, frame_width, frame_height)
-        inside = point_in_polygon(point, self.polygon)
+        inside = (
+            point_in_polygon(point, self.polygon)
+            and not any(point_in_polygon(point, polygon) for polygon in self.exclusion_polygons)
+        )
         state = self._tracks.get(tracking_id)
         if state is None:
             self._tracks[tracking_id] = {

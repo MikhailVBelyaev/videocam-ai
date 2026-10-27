@@ -1,9 +1,9 @@
 # Development Log
 
-## 2026-10-27 — Home-approach notification prototype (local only)
+## 2026-10-27 — Home-approach notification prototype, x99 activation and calibration
 
-Implemented the owner-approved first version; no production deployment or
-Telegram delivery was performed in this development session.
+Implemented and activated the owner-approved first version on x99. Raw archive
+and the existing dated-folder retention were kept intact.
 
 - Added `cams_grabber/zone_events.py`: testable normalised-polygon geometry,
   bottom-centre bounding-box entry logic, startup warmup, persistence, and
@@ -17,7 +17,12 @@ Telegram delivery was performed in this development session.
   event JSON/evidence artefacts under the same dated folder.
 - Replaced the scheduled Telegram raw-frame delivery path with event-queue-only
   delivery, and added `/menu` / `/stats` owner controls.
-- Added five focused `tests/test_zone_events.py` tests. They pass under local
+- The first live evidence showed a parked vehicle false-positive at the
+  right-hand planter corner: its bounding-box ground point was inside the
+  owner's red boundary. Retained the evidence/history, then added an explicit
+  higher-priority exclusion polygon for that fixed corner. No Telegram message,
+  image, or local archive artefact was deleted.
+- Added focused `tests/test_zone_events.py` tests. They pass under local
   Python 3.9. Existing test modules require Python 3.10+ due to pre-existing
   PEP 604 annotations and cannot be imported by this Mac's Python 3.9.
 

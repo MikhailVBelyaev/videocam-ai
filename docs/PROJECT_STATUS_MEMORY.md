@@ -2,10 +2,11 @@
 
 Last updated: 2026-10-27
 
-## Latest Update (2026-10-27) — home-approach notification prototype (local, not deployed)
+## Latest Update (2026-10-27) — home-approach notification prototype deployed to x99
 
-Owner approved a first implementation to replace the raw-frame Telegram stream
-with notifications only for entries into the owner-marked forecourt boundary.
+Owner approved and activated a first implementation to replace the raw-frame
+Telegram stream with notifications only for entries into the owner-marked
+forecourt boundary.
 
 - Added a normalised owner-calibrated approach polygon, pure geometry/event gate,
   30-second startup warmup, four-frame entry persistence, and 45-second spatial
@@ -16,10 +17,17 @@ with notifications only for entries into the owner-marked forecourt boundary.
 - `tg_bot` now has a separate approach-event cursor and sends only evidence from
   that queue. `/menu` supplies statistics/mute controls and `/stats` reports
   semantic archive counts plus approach entries.
-- Added five focused geometry/gate tests. Local Python is 3.9 whereas this
+- Initial live observation surfaced a real false positive: the usual parked
+  vehicle at the right/planter corner had its bottom-centre inside the traced
+  boundary. Evidence remains retained; an explicit exclusion polygon for that
+  corner was added and is being rolled out. No archive data or Telegram history
+  was removed.
+- Added focused geometry/gate tests. Local Python is 3.9 whereas this
   project source requires Python 3.10+; pre-existing `X | None` annotations
-  prevent importing the legacy test suite locally. No x99 service was changed.
-- See `docs/HOME_APPROACH_PROTOTYPE.md` for data contracts and activation checks.
+  prevent importing the legacy test suite locally. The focused zone suite and
+  Python compilation pass; the deployed containers import successfully on x99.
+- See `docs/HOME_APPROACH_PROTOTYPE.md` for data contracts and remaining
+  calibration/acceptance checks.
 
 ## Latest Update (2026-07-02) — sys_monitor GPU fix + tg_bot class commands + security audit
 

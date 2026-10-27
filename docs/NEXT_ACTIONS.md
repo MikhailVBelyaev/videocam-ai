@@ -2,18 +2,21 @@
 
 Last updated: 2026-10-27
 
-## Immediate next action — validate and activate home-approach prototype
+## Immediate next action — observe and calibrate the active home-approach prototype
 
-The local prototype is implemented but **not deployed**. Before any x99 rollout:
+The x99 prototype is active. Perform these low-risk acceptance checks while
+leaving the raw archive and retention policy unchanged:
 
-1. Build `cams_grabber` and `tg_bot` with Python 3.10+ in their Docker images.
-2. Start with the owner's Telegram notifications still muted and validate the
+1. Confirm the right/planter exclusion mask suppresses the permanently parked
+   vehicle after the camera's 30-second warmup.
+2. With the owner's Telegram notifications still muted, validate the
    polygon overlay/event JSON against live day and night traffic.
 3. Confirm road-only traffic creates no `events/*.json`; manually walk/drive
    across the red boundary and verify one evidence image/event per entry.
 4. Verify `/menu`, `/stats`, mute/unmute, raw-gallery retention, and no event
    replay after a bot restart.
-5. Adjust `output/cam1/zone_config.json` only after reviewing the live overlay.
+5. Adjust `output/cam1/zone_config.json` only after reviewing the live overlay
+   with the owner; keep every raw/event artefact during the normal retention.
 
 See `docs/HOME_APPROACH_PROTOTYPE.md` for exact acceptance checks.
 

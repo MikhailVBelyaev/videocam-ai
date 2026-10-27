@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 import imagehash
 from PIL import Image
-from zone_events import ApproachEventGate, DEFAULT_APPROACH_POLYGON
+from zone_events import ApproachEventGate, DEFAULT_APPROACH_POLYGON, DEFAULT_EXCLUSION_POLYGONS
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -322,6 +322,7 @@ def _load_zone_gate() -> tuple[ApproachEventGate, tuple]:
         min_inside_frames=int(config.get("min_inside_frames", MIN_PERSIST_FRAMES)),
         nearby_cooldown_seconds=float(config.get("nearby_cooldown_seconds", 45)),
         alert_classes=config.get("alert_classes"),
+        exclusion_polygons=config.get("exclusion_polygons", DEFAULT_EXCLUSION_POLYGONS),
     )
     return gate, polygon
 
