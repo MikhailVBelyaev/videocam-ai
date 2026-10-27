@@ -10,6 +10,9 @@ Telegram delivery was performed in this development session.
   short spatial cooldown for tracker-ID churn.
 - Added `cams_grabber/zone_config.default.json`, traced from the owner-supplied
   red boundary. First live start will persist it as `output/cam1/zone_config.json`.
+- Mounted the zone module/config alongside the existing mounted grabber script
+  so the first x99 activation does not require re-downloading the large CUDA
+  base image; the Dockerfile still copies both files for clean future builds.
 - Preserved existing raw frames/retention; added per-date `analytics.jsonl` and
   event JSON/evidence artefacts under the same dated folder.
 - Replaced the scheduled Telegram raw-frame delivery path with event-queue-only

@@ -7,6 +7,8 @@ services:
     volumes:
       - ./output:/app/output
       - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
+      - ./cams_grabber/zone_events.py:/app/zone_events.py:ro
+      - ./cams_grabber/zone_config.default.json:/app/zone_config.default.json:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=0                          # x99: GPU0 — constant video processing
       - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility  # 'video' injects libnvcuvid for NVDEC
