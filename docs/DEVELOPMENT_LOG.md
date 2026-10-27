@@ -1,5 +1,25 @@
 # Development Log
 
+## 2026-10-27 — Home-approach notification prototype (local only)
+
+Implemented the owner-approved first version; no production deployment or
+Telegram delivery was performed in this development session.
+
+- Added `cams_grabber/zone_events.py`: testable normalised-polygon geometry,
+  bottom-centre bounding-box entry logic, startup warmup, persistence, and
+  short spatial cooldown for tracker-ID churn.
+- Added `cams_grabber/zone_config.default.json`, traced from the owner-supplied
+  red boundary. First live start will persist it as `output/cam1/zone_config.json`.
+- Preserved existing raw frames/retention; added per-date `analytics.jsonl` and
+  event JSON/evidence artefacts under the same dated folder.
+- Replaced the scheduled Telegram raw-frame delivery path with event-queue-only
+  delivery, and added `/menu` / `/stats` owner controls.
+- Added five focused `tests/test_zone_events.py` tests. They pass under local
+  Python 3.9. Existing test modules require Python 3.10+ due to pre-existing
+  PEP 604 annotations and cannot be imported by this Mac's Python 3.9.
+
+Detailed contract and acceptance checks: `docs/HOME_APPROACH_PROTOTYPE.md`.
+
 ## 2026-06-22 (2) — GStreamer NVDEC reader (no ffmpeg subprocess)
 
 ### Replace ffmpeg pipe with GStreamer in-process pipeline

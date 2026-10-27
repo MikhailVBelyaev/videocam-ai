@@ -107,7 +107,18 @@ docker compose up -d --force-recreate web_viewer
 
 ## Telegram bot
 
-The `tg_bot` service sends new camera frames to Telegram and responds to the `/admin` command.
+The `tg_bot` service sends **home-approach events** to Telegram and responds to
+owner commands. Raw detection frames remain in `output/<camera>/<date>/` for
+the existing retention period; road traffic is archive/statistics input, not a
+Telegram notification.
+
+The initial owner-calibrated polygon is stored at
+`output/cam1/zone_config.json` on the first start. It is a copy of
+`cams_grabber/zone_config.default.json`, traced from the owner's red boundary.
+An event is created only after a supported object has stably entered the
+home-side polygon. Each event has a JSON queue record and an evidence image in
+`output/cam1/<date>/events/`; both are deleted together with their dated folder
+by the existing retention job.
 
 Environment variables (set in `tg_bot/.env`):
 
@@ -120,6 +131,10 @@ Environment variables (set in `tg_bot/.env`):
 - `MAX_IMAGE_AGE_SECONDS` — optional maximum age in seconds for an image to be considered fresh enough to send (default: `3600`)
 
 Commands:
+
+- `/menu` — interactive home-approach controls: today/week statistics, mute for
+  one hour, and unmute.
+- `/stats` — raw semantic detection counts plus home-approach event counts.
 
 - `/admin` — returns a single-page summary from the latest `output/triage_summary.json` **and sends the latest image file**:
   - latest run date and freshness indicator
@@ -157,7 +172,8 @@ Or start via Docker Compose:
 docker compose up -d tg_bot
 ```
 
-The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_ID`.
+The bot polls the event queue every 5 seconds and posts only new home-approach
+evidence images to `TELEGRAM_CHAT_ID`. It does not drain raw camera frames.
 On first start or when `output/.last_sent_file` is missing, the bot initializes its
 state to the most recent image in the latest dated folder without sending it. This
 prevents draining the entire folder on restart.

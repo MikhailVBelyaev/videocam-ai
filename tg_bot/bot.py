@@ -11,8 +11,8 @@ import imagehash
 import shutil
 import asyncio
 
-from telegram import BotCommand, Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 try:
     import docker
@@ -69,6 +69,8 @@ _LAST_SKIP_REASON = ""
 
 # Per-camera state: {camera_id: {"folder": str|None, "image": str|None, "last_sent_ts": float}}
 _cam_state: dict = {}
+_zone_event_state: dict = {}
+ZONE_MUTE_FILE = os.path.join(OUTPUT_DIR, ".telegram_zone_mute_until")
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +397,145 @@ async def image_sender_job(context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------------------------------------------------------
+# Home-approach event delivery (the low-noise production path)
+# ---------------------------------------------------------------------------
+
+def _zone_event_state_file(camera: str) -> str:
+    return os.path.join(OUTPUT_DIR, camera, ".last_sent_zone_event")
+
+
+def _load_zone_event_state(camera: str) -> str | None:
+    try:
+        with open(_zone_event_state_file(camera), encoding="utf-8") as handle:
+            return handle.read().strip() or None
+    except OSError:
+        return None
+
+
+def _save_zone_event_state(camera: str, event_path: str) -> None:
+    try:
+        with open(_zone_event_state_file(camera), "w", encoding="utf-8") as handle:
+            handle.write(os.path.basename(event_path) + "\n")
+    except OSError as exc:
+        logger.error("[%s] failed to save zone event cursor: %s", camera, exc)
+
+
+def _zone_event_files(camera: str) -> list[str]:
+    paths = []
+    for date in _get_dates_for_camera(camera):
+        events_dir = os.path.join(OUTPUT_DIR, camera, date, "events")
+        try:
+            paths.extend(
+                os.path.join(events_dir, filename)
+                for filename in os.listdir(events_dir)
+                if filename.startswith("event_") and filename.endswith(".json")
+            )
+        except OSError:
+            continue
+    return sorted(paths)
+
+
+def _read_zone_event(path: str) -> dict | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            event = json.load(handle)
+        evidence = event.get("evidence")
+        if not evidence or os.path.basename(evidence) != evidence:
+            return None
+        event["_path"] = path
+        event["_evidence_path"] = os.path.join(os.path.dirname(path), evidence)
+        return event
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _mute_until() -> float:
+    try:
+        return float(open(ZONE_MUTE_FILE, encoding="utf-8").read().strip())
+    except (OSError, ValueError):
+        return 0.0
+
+
+def _is_zone_muted() -> bool:
+    return _mute_until() > time.time()
+
+
+def _set_zone_mute(seconds: int) -> None:
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(ZONE_MUTE_FILE, "w", encoding="utf-8") as handle:
+        handle.write(f"{time.time() + seconds:.3f}\n")
+
+
+def _clear_zone_mute() -> None:
+    try:
+        os.remove(ZONE_MUTE_FILE)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.error("Unable to clear zone mute: %s", exc)
+
+
+def _init_zone_event_state() -> None:
+    """Start after historical events: archive stays browsable, no replay flood."""
+    for camera in _cameras():
+        cursor = _load_zone_event_state(camera)
+        if cursor:
+            _zone_event_state[camera] = cursor
+            continue
+        events = _zone_event_files(camera)
+        if events:
+            _zone_event_state[camera] = os.path.basename(events[-1])
+            _save_zone_event_state(camera, events[-1])
+            logger.info("[%s] initialized home-event cursor to latest archived event", camera)
+        else:
+            _zone_event_state[camera] = None
+
+
+def _send_zone_events_iteration() -> None:
+    """Send only newly-created approach events; raw frames are never Telegram input."""
+    if not _zone_event_state:
+        _init_zone_event_state()
+    muted = _is_zone_muted()
+    multi_camera = len(_cameras()) > 1
+    for camera in _cameras():
+        cursor = _zone_event_state.get(camera)
+        events = _zone_event_files(camera)
+        start = 0
+        if cursor:
+            try:
+                start = [os.path.basename(path) for path in events].index(cursor) + 1
+            except ValueError:
+                start = 0
+        for path in events[start:]:
+            event = _read_zone_event(path)
+            # A malformed/partial event must not permanently block a later one.
+            if event is None:
+                _zone_event_state[camera] = os.path.basename(path)
+                _save_zone_event_state(camera, path)
+                continue
+            if muted:
+                logger.info("[%s] muted: archived approach event %s without Telegram delivery", camera, path)
+            else:
+                label = event.get("class", "object")
+                stamp = event.get("timestamp", "unknown time")
+                prefix = f"{camera}: " if multi_camera else ""
+                caption = f"🏠 {prefix}{label} entered the home approach\n{stamp}"
+                if not os.path.isfile(event["_evidence_path"]) or not send_photo(event["_evidence_path"], caption):
+                    # Do not advance on an actual send failure: retry on next tick.
+                    break
+            _zone_event_state[camera] = os.path.basename(path)
+            _save_zone_event_state(camera, path)
+
+
+async def zone_event_sender_job(context: ContextTypes.DEFAULT_TYPE):
+    if _SENDER_LOCK.locked():
+        logger.info("Skipping overlapping zone_event_sender_job")
+        return
+    async with _SENDER_LOCK:
+        await asyncio.to_thread(_send_zone_events_iteration)
+
+
+# ---------------------------------------------------------------------------
 # /admin command helpers
 # ---------------------------------------------------------------------------
 
@@ -642,7 +783,7 @@ async def _last_class_command(update: Update, label: str, keywords: list, emoji:
 
 
 async def last_car_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _last_class_command(update, "vehicle", ["vehicle"], "🚗")
+    await _last_class_command(update, "vehicle", ["vehicle", "car", "truck", "bus", "motorcycle", "bicycle"], "🚗")
 
 
 async def last_person_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -651,6 +792,111 @@ async def last_person_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def last_animal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _last_class_command(update, "animal", _ANIMAL_KEYWORDS, "🐾")
+
+
+# ---------------------------------------------------------------------------
+# Home-zone statistics and owner menu
+# ---------------------------------------------------------------------------
+
+def _zone_statistics(days: int = 1) -> dict:
+    """Summarise retained raw detections and approach entries by semantic class."""
+    captures = {}
+    entries = {}
+    today = datetime.now().date()
+    for camera in _cameras():
+        for date in _get_dates_for_camera(camera):
+            try:
+                if (today - datetime.strptime(date, "%Y-%m-%d").date()).days >= days:
+                    continue
+            except ValueError:
+                continue
+            folder = os.path.join(OUTPUT_DIR, camera, date)
+            try:
+                with open(os.path.join(folder, "analytics.jsonl"), encoding="utf-8") as handle:
+                    for line in handle:
+                        try:
+                            record = json.loads(line)
+                            label = record.get("class", "other")
+                            captures[label] = captures.get(label, 0) + 1
+                        except json.JSONDecodeError:
+                            continue
+            except OSError:
+                pass
+            for path in _zone_event_files(camera):
+                # _zone_event_files spans all dates; retain only this date's directory.
+                if f"{os.sep}{date}{os.sep}" not in path:
+                    continue
+                event = _read_zone_event(path)
+                if event:
+                    label = event.get("class", "other")
+                    entries[label] = entries.get(label, 0) + 1
+    return {"captures": captures, "entries": entries}
+
+
+def _format_zone_statistics(days: int = 1) -> str:
+    stats = _zone_statistics(days)
+    title = "today" if days == 1 else f"last {days} days"
+    lines = [f"*Camera statistics — {title}*", "", "*Raw detections (archive):*"]
+    if stats["captures"]:
+        lines.extend(f"• {name}: {count}" for name, count in sorted(stats["captures"].items()))
+    else:
+        lines.append("• No new metadata yet (the new collector starts after deployment).")
+    lines += ["", "*Home-approach entries (Telegram candidates):*"]
+    if stats["entries"]:
+        lines.extend(f"• {name}: {count}" for name, count in sorted(stats["entries"].items()))
+    else:
+        lines.append("• 0")
+    muted = _is_zone_muted()
+    lines += ["", f"*Notifications:* {'🔕 muted' if muted else '🔔 active'}"]
+    return "\n".join(lines)
+
+
+def _owner_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Today", callback_data="zone:today"),
+         InlineKeyboardButton("📈 7 days", callback_data="zone:week")],
+        [InlineKeyboardButton("🔕 Mute 1 hour", callback_data="zone:mute1h"),
+         InlineKeyboardButton("🔔 Unmute", callback_data="zone:unmute")],
+    ])
+
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin_chat(update):
+        return
+    await update.message.reply_text(
+        "*Home approach controls*\nOnly entries into the calibrated home zone can notify Telegram.\n"
+        "Road detections stay in the local archive/statistics.",
+        reply_markup=_owner_menu(), parse_mode="Markdown",
+    )
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_admin_chat(update):
+        await update.message.reply_text(_format_zone_statistics(), parse_mode="Markdown")
+
+
+async def zone_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query or str(query.message.chat_id) != str(ADMIN_CHAT_ID):
+        return
+    await query.answer()
+    action = query.data
+    if action == "zone:today":
+        text = _format_zone_statistics(1)
+    elif action == "zone:week":
+        text = _format_zone_statistics(7)
+    elif action == "zone:mute1h":
+        try:
+            _set_zone_mute(3600)
+            text = "🔕 Home-approach notifications muted for one hour. Events remain in the local archive."
+        except OSError as exc:
+            text = f"Could not set mute: {exc}"
+    elif action == "zone:unmute":
+        _clear_zone_mute()
+        text = "🔔 Home-approach notifications are active."
+    else:
+        return
+    await query.edit_message_text(text, reply_markup=_owner_menu(), parse_mode="Markdown")
 
 
 # ---------------------------------------------------------------------------
@@ -834,6 +1080,8 @@ async def state_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 BOT_COMMANDS = [
     BotCommand("admin",        "Summary + latest captured image"),
     BotCommand("state",        "Container health and uptime"),
+    BotCommand("menu",         "Home-approach controls and mute"),
+    BotCommand("stats",        "Today’s home-zone and archive statistics"),
     BotCommand("last_car",     "Send last saved vehicle frame"),
     BotCommand("last_person",  "Send last saved person frame"),
     BotCommand("last_animal",  "Send last saved animal frame"),
@@ -854,17 +1102,23 @@ def main():
 
     logger.info("Telegram bot started, watching for new files...")
     _init_all_cameras()
+    _init_zone_event_state()
 
     app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("admin",        admin_command))
     app.add_handler(CommandHandler("state",        state_command))
+    app.add_handler(CommandHandler("menu",         menu_command))
+    app.add_handler(CommandHandler("stats",        stats_command))
     app.add_handler(CommandHandler("last_car",     last_car_command))
     app.add_handler(CommandHandler("last_person",  last_person_command))
     app.add_handler(CommandHandler("last_animal",  last_animal_command))
     app.add_handler(CommandHandler("stacking",     stacking_command))
     app.add_handler(CommandHandler("stacking_on",  stacking_on_command))
     app.add_handler(CommandHandler("stacking_off", stacking_off_command))
-    app.job_queue.run_repeating(image_sender_job, interval=5, first=5)
+    app.add_handler(CallbackQueryHandler(zone_menu_callback, pattern=r"^zone:"))
+    # Raw images remain archived for the current retention period.  This is the
+    # only delivery job: it reads explicit home-approach events, never frames.
+    app.job_queue.run_repeating(zone_event_sender_job, interval=5, first=5)
     app.run_polling()
 
 

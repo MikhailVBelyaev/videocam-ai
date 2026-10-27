@@ -24,7 +24,7 @@ RUN pip3 install --no-cache-dir \
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-COPY main_ssh.py .
+COPY main_ssh.py zone_events.py zone_config.default.json ./
 
 # Download YOLOv8s weights at build time so the container is self-contained
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8s.pt')"

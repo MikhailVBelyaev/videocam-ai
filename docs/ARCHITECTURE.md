@@ -87,15 +87,19 @@ frame_2026-06-21 14:00:41_id9257_vehicle_debug.jpg  ← cv2.imwrite(annotated) d
 
 ### tg_bot
 
-**Role:** deliver new captures to Telegram, provide admin insight.
+**Role:** deliver owner-relevant home-approach events to Telegram, provide
+admin insight. Raw captures remain local archive/analytics input.
 
 **Send loop (every 5 s):**
-1. Read `output/<cam>/.last_sent_file` → know current folder + last sent image
-2. List current folder images, sort by mtime (newest first within unsent window)
-3. Filter: skip stale (> `MAX_IMAGE_AGE_SECONDS`), skip `*_debug.jpg`
-4. Skip perceptually similar to last sent (phash distance ≤ `IMAGE_SIMILARITY_THRESHOLD`)
-5. Send up to `MAX_IMAGES_PER_ITERATION` per tick
-6. Advance to next folder if current folder yields 0 sends and is not newest
+1. Read `output/<cam>/.last_sent_zone_event`.
+2. Read new `output/<cam>/<date>/events/event_*.json` records.
+3. Send their associated annotated evidence JPEG only.
+4. Advance the event cursor after a successful send, or while muted without
+   delivery, so no raw-frame or mute backlog can flood Telegram.
+
+`cams_grabber` creates an event only after a supported YOLO track stably enters
+the owner-calibrated polygon. Ordinary road detections remain raw archive and
+statistics records (`analytics.jsonl`), with no Telegram candidate.
 
 **State file** `output/<cam>/.last_sent_file` (per-camera):
 ```

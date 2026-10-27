@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import threading
+import json
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -13,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 import imagehash
 from PIL import Image
+from zone_events import ApproachEventGate, DEFAULT_APPROACH_POLYGON
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -41,8 +43,10 @@ ANIMAL_CLASSES = {
 }
 VIDEO_TARGET_CLASSES = {"person"} | ANIMAL_CLASSES  # classes we record clips of (not vehicles)
 
-TARGET_CLASSES = {"car", "person"} | ANIMAL_CLASSES
-VEHICLE_CLASSES = {"car", "truck", "bus"}
+# Keep the raw archive useful: record the practical road/home entities
+# separately instead of flattening car/truck/bus into one "vehicle" class.
+VEHICLE_CLASSES = {"car", "truck", "bus", "motorcycle", "bicycle"}
+TARGET_CLASSES = VEHICLE_CLASSES | {"person"} | ANIMAL_CLASSES
 CONF_THRESHOLD = 0.60          # tracking threshold — object must clear this to be counted
 SAVE_CONF_THRESHOLD = 0.70     # stricter gate at actual disk write — reduces ghost saves
 MIN_PERSIST_FRAMES = 4         # consecutive qualifying detections before saving
@@ -291,6 +295,93 @@ def get_daily_output_dir() -> Path:
     return output_dir
 
 
+def _load_zone_gate() -> tuple[ApproachEventGate, tuple]:
+    """Load owner calibration from the shared output volume, creating it once.
+
+    The committed default is the polygon traced from the owner's red line.  A
+    per-camera file in output survives container rebuilds and is intentionally
+    retained with the camera's configuration, not with dated footage.
+    """
+    config_path = Path("output") / CAMERA_ID / "zone_config.json"
+    default_path = Path(__file__).with_name("zone_config.default.json")
+    config = {}
+    try:
+        if config_path.exists():
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+        else:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(default_path.read_text(encoding="utf-8"), encoding="utf-8")
+            config = json.loads(default_path.read_text(encoding="utf-8"))
+            logging.info("Created owner zone configuration: %s", config_path)
+    except (OSError, json.JSONDecodeError) as exc:
+        logging.error("Could not load zone configuration (%s); using safe built-in default", exc)
+
+    polygon = tuple(tuple(point) for point in config.get("approach_polygon", DEFAULT_APPROACH_POLYGON))
+    gate = ApproachEventGate(
+        polygon=polygon,
+        min_inside_frames=int(config.get("min_inside_frames", MIN_PERSIST_FRAMES)),
+        nearby_cooldown_seconds=float(config.get("nearby_cooldown_seconds", 45)),
+        alert_classes=config.get("alert_classes"),
+    )
+    return gate, polygon
+
+
+def _write_capture_record(output_dir: Path, timestamp: datetime, obj_id: int, class_name: str,
+                          confidence: float, box_coords: list, zone_event: bool) -> None:
+    """Append immutable raw-detection metadata beside the existing image archive."""
+    record = {
+        "timestamp": timestamp.isoformat(timespec="seconds"),
+        "tracking_id": obj_id,
+        "class": class_name,
+        "confidence": round(confidence, 3),
+        "box": [round(v, 1) for v in box_coords],
+        "approach_event": zone_event,
+    }
+    try:
+        with (output_dir / "analytics.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except OSError as exc:
+        logging.error("Unable to append analytics record: %s", exc)
+
+
+def _write_approach_event(frame: np.ndarray, timestamp: datetime, obj_id: int, class_name: str,
+                          confidence: float, box_coords: list, polygon: tuple) -> None:
+    """Persist one notification candidate + evidence within the dated retention folder."""
+    output_dir = get_daily_output_dir()
+    events_dir = output_dir / "events"
+    try:
+        events_dir.mkdir(exist_ok=True)
+        stamp = timestamp.strftime("%Y-%m-%d_%H-%M-%S")
+        stem = f"event_{stamp}_id{obj_id}_{class_name}"
+        evidence_path = events_dir / f"{stem}.jpg"
+        metadata_path = events_dir / f"{stem}.json"
+        evidence = frame.copy()
+        h, w = evidence.shape[:2]
+        points = np.array([(int(x * w), int(y * h)) for x, y in polygon], dtype=np.int32)
+        cv2.polylines(evidence, [points], True, (0, 255, 0), 3)
+        x1, y1, x2, y2 = (int(v) for v in box_coords)
+        cv2.rectangle(evidence, (x1, y1), (x2, y2), (0, 255, 255), 3)
+        cv2.putText(evidence, f"HOME ENTRY: {class_name} {confidence:.0%}", (20, h - 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2, cv2.LINE_AA)
+        if not cv2.imwrite(str(evidence_path), evidence):
+            raise OSError("cv2.imwrite returned false")
+        metadata = {
+            "schema_version": 1,
+            "timestamp": timestamp.isoformat(timespec="seconds"),
+            "camera": CAMERA_ID,
+            "tracking_id": obj_id,
+            "class": class_name,
+            "confidence": round(confidence, 3),
+            "box": [round(v, 1) for v in box_coords],
+            "evidence": evidence_path.name,
+            "kind": "approach_entry",
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+        logging.info("Created approach event: %s", metadata_path)
+    except OSError as exc:
+        logging.error("Unable to write approach event: %s", exc)
+
+
 def iou(boxA: list, boxB: list) -> float:
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
@@ -319,6 +410,7 @@ _last_save_hash: dict = {}     # per-tracking-ID phash of last saved frame
 prev_active: set = set()
 frame_id = 0
 _last_consumed_seq = 0
+zone_gate, _approach_polygon = _load_zone_gate()
 
 # Initialise the stacking flag file from the code default.
 # Only touches the file if it doesn't exist yet — so Telegram toggles survive rebuilds.
@@ -399,9 +491,7 @@ while True:
         if obj_id is None:
             continue
         class_name = class_names[cls_id]
-        if class_name in VEHICLE_CLASSES:
-            class_name = "vehicle"
-        if class_name not in TARGET_CLASSES and class_name != "vehicle":
+        if class_name not in TARGET_CLASSES:
             continue
         if conf < CONF_THRESHOLD:
             continue
@@ -420,6 +510,18 @@ while True:
         detection_buffer[obj_id] += 1
         if detection_buffer[obj_id] < MIN_PERSIST_FRAMES:
             continue
+
+        # This is deliberately before the legacy raw-frame duplicate gate.  A
+        # home-entry event is a different contract: it is emitted once on a
+        # crossing into the owner-calibrated polygon, while road traffic still
+        # remains available in the existing raw archive and analytics stream.
+        zone_event = zone_gate.observe(
+            obj_id, class_name, box_coords, frame_w, frame_h, current_time
+        )
+        if zone_event is not None:
+            _write_approach_event(
+                frame, current_time, obj_id, class_name, conf, box_coords, _approach_polygon
+            )
 
         duplicate = False
         for stored_box, last_seen_time in object_last_seen.values():
@@ -504,6 +606,10 @@ while True:
             cv2.imwrite(str(debug_filename), annotated)
             if filename.exists():
                 logging.info("Saved %s", filename)
+                _write_capture_record(
+                    output_dir, current_time, obj_id, class_name, conf, box_coords,
+                    zone_event is not None,
+                )
                 _last_save_hash[obj_id] = ph
                 web_frame = Path("output") / CAMERA_ID / "frame_for_web.jpg"
                 cv2.imwrite(str(web_frame), annotated)
@@ -563,6 +669,7 @@ while True:
         detection_buffer.pop(obj_id, None)
         _last_save_hash.pop(obj_id, None)
         _record_cooldown.pop(obj_id, None)
+        zone_gate.forget(obj_id)
 
     prev_active = {item for item in prev_active if item[1] not in to_remove} | current_active
 

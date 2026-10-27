@@ -2,8 +2,27 @@
 
 ## Purpose
 
-Operate the `tg_bot` service that sends new camera frames to Telegram and responds
-to admin commands.
+Operate the `tg_bot` service that sends new **home-approach event evidence** to
+Telegram and responds to admin commands. Raw camera frames remain in the local
+dated archive; they are not a Telegram delivery queue.
+
+## Home-Approach Delivery (current mode)
+
+`cams_grabber` writes an event JSON and an annotated evidence JPEG only after a
+supported object enters the owner-calibrated approach polygon. The bot polls
+`output/<camera>/<date>/events/` every five seconds and sends that evidence.
+It records its independent cursor in `output/<camera>/.last_sent_zone_event`.
+On its first start, the cursor moves to the newest historical event, avoiding a
+replay flood. Event JSON/JPEG and raw images live under the same dated folder,
+so the existing retention job deletes them together.
+
+The owner commands are:
+
+- `/menu` — inline controls for today's/seven-day stats and one-hour mute.
+- `/stats` — semantic raw-detection and approach-entry counters.
+
+Mute suppresses Telegram delivery and advances the event cursor; evidence stays
+available locally and muted events are never replayed on unmute.
 
 ## Environment Variables
 
@@ -19,9 +38,14 @@ Configure these in `tg_bot/.env`:
 | `IMAGE_SIMILARITY_THRESHOLD` | No | `10` | Perceptual hash distance threshold; images within this distance of the last sent image are skipped as duplicates |
 | `MAX_IMAGE_AGE_SECONDS` | No | `3600` | Maximum age in seconds for an image to be considered fresh enough to send; older images are skipped as stale |
 
-## Image Sender Safeguards
+## Legacy Raw-Frame Sender Helpers
 
-The bot polls `output/` every 5 seconds and posts new images to `TELEGRAM_CHAT_ID`.
+The following raw-frame code remains for backwards-compatible unit coverage and
+manual diagnostics, but it is **not scheduled in current production mode**.
+`zone_event_sender_job` is the scheduled delivery path.
+
+The bot polls the dated `events/` queue every 5 seconds and posts new
+home-approach evidence images to `TELEGRAM_CHAT_ID`.
 The sender includes three production safeguards:
 
 ### 1. Concurrency Guard

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "description": "Owner-calibrated home-side polygon. Points are frame fractions [x, y]. Road-side detections are statistics only; entering this polygon creates a Telegram candidate.",
+  "approach_polygon": [[0.17, 1.0], [0.17, 0.49], [0.24, 0.44], [0.38, 0.40], [0.43, 0.38], [0.65, 0.37], [0.67, 0.40], [0.68, 0.47], [0.65, 0.51], [0.66, 0.58], [0.70, 0.61], [0.79, 0.62], [0.83, 0.67], [0.88, 0.75], [0.94, 0.90], [1.0, 1.0]],
+  "min_inside_frames": 4,
+  "nearby_cooldown_seconds": 45,
+  "alert_classes": ["person", "bicycle", "motorcycle", "car", "truck", "bus", "bird", "cat", "dog", "horse", "sheep", "cow"]
+}

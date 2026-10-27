@@ -1,6 +1,25 @@
 # Project Status Memory
 
-Last updated: 2026-07-02
+Last updated: 2026-10-27
+
+## Latest Update (2026-10-27) — home-approach notification prototype (local, not deployed)
+
+Owner approved a first implementation to replace the raw-frame Telegram stream
+with notifications only for entries into the owner-marked forecourt boundary.
+
+- Added a normalised owner-calibrated approach polygon, pure geometry/event gate,
+  30-second startup warmup, four-frame entry persistence, and 45-second spatial
+  re-identification suppression.
+- Raw dated camera frames and their existing retention are unchanged. New
+  `analytics.jsonl` records semantic capture classes; `events/` holds evidence
+  JPEG + JSON queue records inside the same dated folder.
+- `tg_bot` now has a separate approach-event cursor and sends only evidence from
+  that queue. `/menu` supplies statistics/mute controls and `/stats` reports
+  semantic archive counts plus approach entries.
+- Added five focused geometry/gate tests. Local Python is 3.9 whereas this
+  project source requires Python 3.10+; pre-existing `X | None` annotations
+  prevent importing the legacy test suite locally. No x99 service was changed.
+- See `docs/HOME_APPROACH_PROTOTYPE.md` for data contracts and activation checks.
 
 ## Latest Update (2026-07-02) — sys_monitor GPU fix + tg_bot class commands + security audit
 

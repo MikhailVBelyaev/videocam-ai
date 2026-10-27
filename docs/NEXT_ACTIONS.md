@@ -1,6 +1,21 @@
 # Next Actions
 
-Last updated: 2026-07-04
+Last updated: 2026-10-27
+
+## Immediate next action — validate and activate home-approach prototype
+
+The local prototype is implemented but **not deployed**. Before any x99 rollout:
+
+1. Build `cams_grabber` and `tg_bot` with Python 3.10+ in their Docker images.
+2. Start with the owner's Telegram notifications still muted and validate the
+   polygon overlay/event JSON against live day and night traffic.
+3. Confirm road-only traffic creates no `events/*.json`; manually walk/drive
+   across the red boundary and verify one evidence image/event per entry.
+4. Verify `/menu`, `/stats`, mute/unmute, raw-gallery retention, and no event
+   replay after a bot restart.
+5. Adjust `output/cam1/zone_config.json` only after reviewing the live overlay.
+
+See `docs/HOME_APPROACH_PROTOTYPE.md` for exact acceptance checks.
 
 ## Current State
 
