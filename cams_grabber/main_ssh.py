@@ -321,6 +321,8 @@ def _load_zone_gate() -> tuple[ApproachEventGate, tuple]:
         polygon=polygon,
         min_inside_frames=int(config.get("min_inside_frames", MIN_PERSIST_FRAMES)),
         nearby_cooldown_seconds=float(config.get("nearby_cooldown_seconds", 45)),
+        occupancy_hold_seconds=float(config.get("occupancy_hold_seconds", 900)),
+        occupancy_distance=float(config.get("occupancy_distance", 0.20)),
         alert_classes=config.get("alert_classes"),
         exclusion_polygons=config.get("exclusion_polygons", DEFAULT_EXCLUSION_POLYGONS),
     )

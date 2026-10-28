@@ -26,6 +26,10 @@ and the existing dated-folder retention were kept intact.
 - Added focused `tests/test_zone_events.py` tests. They pass under local
   Python 3.9. Existing test modules require Python 3.10+ due to pre-existing
   PEP 604 annotations and cannot be imported by this Mac's Python 3.9.
+- Live owner feedback on 2026-10-28 exposed tracker loss for a parked vehicle
+  inside the permitted approach area. Added a 15-minute ID-independent spatial
+  occupancy latch, with car/truck/bus grouped as one vehicle, so intermittent
+  detection no longer turns a standing object into repeated entries.
 
 Detailed contract and acceptance checks: `docs/HOME_APPROACH_PROTOTYPE.md`.
 

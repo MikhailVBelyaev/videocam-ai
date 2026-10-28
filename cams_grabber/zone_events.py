@@ -39,6 +39,7 @@ ALERT_CLASSES = frozenset({
     "person", "bicycle", "motorcycle", "car", "truck", "bus",
     "bird", "cat", "dog", "horse", "sheep", "cow",
 })
+VEHICLE_CLASSES = frozenset({"car", "truck", "bus", "motorcycle", "bicycle"})
 
 
 def point_in_polygon(point: tuple[float, float], polygon) -> bool:
@@ -87,6 +88,8 @@ class ApproachEventGate:
         warmup_seconds: float = 30.0,
         nearby_cooldown_seconds: float = 45.0,
         nearby_distance: float = 0.12,
+        occupancy_hold_seconds: float = 900.0,
+        occupancy_distance: float = 0.20,
         alert_classes=None,
         exclusion_polygons=DEFAULT_EXCLUSION_POLYGONS,
     ):
@@ -95,11 +98,17 @@ class ApproachEventGate:
         self.warmup_seconds = warmup_seconds
         self.nearby_cooldown_seconds = nearby_cooldown_seconds
         self.nearby_distance = nearby_distance
+        self.occupancy_hold_seconds = occupancy_hold_seconds
+        self.occupancy_distance = occupancy_distance
         self.alert_classes = frozenset(alert_classes or ALERT_CLASSES)
         self.exclusion_polygons = tuple(tuple(poly) for poly in exclusion_polygons)
         self.started_at: datetime | None = None
         self._tracks: dict[int, dict] = {}
         self._recent: list[ZoneEvent] = []
+        # Independent of tracker IDs.  YOLO/ByteTrack can drop a stationary
+        # object for a handful of frames and resurrect it as a new ID; that is
+        # not a new approach entry.
+        self._occupancies: list[dict] = []
 
     def forget(self, tracking_id: int) -> None:
         self._tracks.pop(tracking_id, None)
@@ -114,6 +123,40 @@ class ApproachEventGate:
             and hypot(event.point[0] - point[0], event.point[1] - point[1]) <= self.nearby_distance
             for event in self._recent
         )
+
+    @staticmethod
+    def _occupancy_class(class_name: str) -> str:
+        """Keep vehicle class flicker (car/truck/bus) in one presence latch."""
+        return "vehicle" if class_name in VEHICLE_CLASSES else class_name
+
+    def _touch_existing_occupancy(self, class_name: str, point, timestamp: datetime) -> bool:
+        """Refresh a same-place object's presence and report whether it is known.
+
+        Expiry deliberately means *no matching confident observation* for the
+        full hold period, rather than a few missing inference frames.
+        """
+        self._occupancies = [
+            occupancy for occupancy in self._occupancies
+            if (timestamp - occupancy["last_seen"]).total_seconds() <= self.occupancy_hold_seconds
+        ]
+        occupancy_class = self._occupancy_class(class_name)
+        for occupancy in self._occupancies:
+            if (
+                occupancy["class_name"] == occupancy_class
+                and hypot(occupancy["point"][0] - point[0], occupancy["point"][1] - point[1])
+                <= self.occupancy_distance
+            ):
+                occupancy["point"] = point
+                occupancy["last_seen"] = timestamp
+                return True
+        return False
+
+    def _remember_occupancy(self, class_name: str, point, timestamp: datetime) -> None:
+        self._occupancies.append({
+            "class_name": self._occupancy_class(class_name),
+            "point": point,
+            "last_seen": timestamp,
+        })
 
     def observe(
         self,
@@ -135,17 +178,28 @@ class ApproachEventGate:
             and not any(point_in_polygon(point, polygon) for polygon in self.exclusion_polygons)
         )
         state = self._tracks.get(tracking_id)
-        if state is None:
-            self._tracks[tracking_id] = {
-                "inside": inside,
-                "frames": 1 if inside else 0,
-                "emitted": False,
-                "new_inside": inside,
-            }
+        if not inside:
+            if state is None:
+                self._tracks[tracking_id] = {
+                    "inside": False, "frames": 0, "emitted": False, "new_inside": False,
+                }
+                return None
+            state.update(inside=False, frames=0, emitted=False, new_inside=False)
             return None
 
-        if not inside:
-            state.update(inside=False, frames=0, emitted=False, new_inside=False)
+        if self._touch_existing_occupancy(class_name, point, timestamp):
+            if state is None:
+                self._tracks[tracking_id] = {
+                    "inside": True, "frames": 1, "emitted": True, "new_inside": False,
+                }
+            else:
+                state.update(inside=True, frames=state["frames"] + 1, emitted=True, new_inside=False)
+            return None
+
+        if state is None:
+            self._tracks[tracking_id] = {
+                "inside": True, "frames": 1, "emitted": False, "new_inside": True,
+            }
             return None
 
         if not state["inside"]:
@@ -166,4 +220,5 @@ class ApproachEventGate:
         event = ZoneEvent(tracking_id, class_name, timestamp, point, reason)
         state["emitted"] = True
         self._recent.append(event)
+        self._remember_occupancy(class_name, point, timestamp)
         return event

@@ -54,6 +54,10 @@ it is placed at the newest historical event; no historical event is replayed.
 - The process warms up for 30 seconds after restart, avoiding a boot alert for
   objects already parked in the zone.
 - A 45-second nearby class/position cooldown suppresses tracker-ID churn.
+- A second, ID-independent occupancy latch keeps a same-place object quiet for
+  15 minutes after its last confident observation. Vehicle class flicker
+  (`car`/`truck`/`bus`) shares one latch. It is rearmed only after that location
+  has had no matching confident observation for the full interval.
 - The bot sends only evidence from `events/`, never ordinary `frame_*.jpg`.
 - Mute advances the event cursor without delivery; events remain in the local
   dated archive and therefore cannot later cause a delayed notification flood.

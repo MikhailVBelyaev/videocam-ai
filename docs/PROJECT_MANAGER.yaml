@@ -5,7 +5,7 @@ project:
 repo:
   github: git@github.com:MikhailVBelyaev/videocam-ai.git
 path: ~/Projects/videocam-ai
-current_goal: 'Owner-approved home-approach notification prototype is active on x99. Raw archive/retention remain unchanged; Telegram sends only explicit approach-event evidence and offers statistics/mute menu. Current calibration adds an exclusion mask for the permanent parked-car/planter corner; observe live day/night entries before finalising the owner polygon.'
+current_goal: 'Owner-approved home-approach notification prototype is active on x99. Raw archive/retention remain unchanged; Telegram sends only explicit approach-event evidence and offers statistics/mute menu. The event gate now combines parking masks with an ID-independent 15-minute occupancy latch so a stationary in-zone vehicle cannot generate periodic messages; observe real departures and re-entries before finalising calibration.'
 next_actions:
 - "Review the TASK-004 QA diff for tests/test_tg_bot.py."
 - "  Verify TgBotFolderAdvanceQATests (7 tests) covers: state file write failure"

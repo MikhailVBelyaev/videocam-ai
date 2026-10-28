@@ -5,5 +5,7 @@
   "exclusion_polygons": [[[0.79, 0.32], [1.0, 0.32], [1.0, 1.0], [0.79, 1.0]]],
   "min_inside_frames": 4,
   "nearby_cooldown_seconds": 45,
+  "occupancy_hold_seconds": 900,
+  "occupancy_distance": 0.2,
   "alert_classes": ["person", "bicycle", "motorcycle", "car", "truck", "bus", "bird", "cat", "dog", "horse", "sheep", "cow"]
 }

@@ -72,3 +72,29 @@ class ZoneGeometryTests(unittest.TestCase):
         self.assertIsNotNone(gate.observe(1, "person", inside, 100, 100, now + timedelta(seconds=1)))
         gate.observe(2, "person", outside, 100, 100, now + timedelta(seconds=2))
         self.assertIsNone(gate.observe(2, "person", inside, 100, 100, now + timedelta(seconds=3)))
+
+    def test_stationary_vehicle_survives_tracker_id_loss_without_realerting(self):
+        gate = ApproachEventGate(
+            polygon=((0, 0.5), (1, 0.5), (1, 1), (0, 1)),
+            min_inside_frames=2,
+            warmup_seconds=0,
+            occupancy_hold_seconds=900,
+            occupancy_distance=0.2,
+        )
+        now = datetime(2026, 10, 28, 8, 0, 0)
+        outside = [40, 10, 60, 30]
+        parked = [35, 50, 65, 99]
+        gate.observe(1, "car", outside, 100, 100, now)
+        gate.observe(1, "car", parked, 100, 100, now + timedelta(seconds=1))
+        self.assertIsNotNone(gate.observe(1, "car", parked, 100, 100, now + timedelta(seconds=2)))
+
+        # The tracker may forget and rediscover the same parked vehicle.
+        gate.forget(1)
+        self.assertIsNone(gate.observe(99, "truck", parked, 100, 100, now + timedelta(seconds=300)))
+        gate.forget(99)
+        self.assertIsNone(gate.observe(100, "car", parked, 100, 100, now + timedelta(seconds=800)))
+
+        # A genuine absence longer than the hold period rearms the location.
+        gate.forget(100)
+        self.assertIsNone(gate.observe(101, "car", parked, 100, 100, now + timedelta(seconds=1701)))
+        self.assertIsNotNone(gate.observe(101, "car", parked, 100, 100, now + timedelta(seconds=1702)))

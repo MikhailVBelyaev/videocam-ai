@@ -7,8 +7,9 @@ Last updated: 2026-10-27
 The x99 prototype is active. Perform these low-risk acceptance checks while
 leaving the raw archive and retention policy unchanged:
 
-1. Confirm the right/planter exclusion mask suppresses the permanently parked
-   vehicle after the camera's 30-second warmup.
+1. Confirm a vehicle deliberately left inside the zone produces at most one
+   entry alert, then remains quiet through tracker-ID changes; after actual
+   departure, allow 15 minutes without a matching observation before retesting.
 2. With the owner's Telegram notifications still muted, validate the
    polygon overlay/event JSON against live day and night traffic.
 3. Confirm road-only traffic creates no `events/*.json`; manually walk/drive

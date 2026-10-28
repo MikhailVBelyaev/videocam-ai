@@ -22,6 +22,10 @@ forecourt boundary.
   boundary. Evidence remains retained; an explicit exclusion polygon for that
   corner was added and is being rolled out. No archive data or Telegram history
   was removed.
+- A later live trial with the owner's vehicle deliberately parked inside the
+  approach revealed repeated alerts after tracker-ID loss. The event gate now
+  uses an ID-independent, 15-minute spatial occupancy latch (including vehicle
+  class flicker) so a stationary car produces one entry, not a periodic stream.
 - Added focused geometry/gate tests. Local Python is 3.9 whereas this
   project source requires Python 3.10+; pre-existing `X | None` annotations
   prevent importing the legacy test suite locally. The focused zone suite and
