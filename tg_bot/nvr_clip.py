@@ -17,6 +17,9 @@ NVR_PASS = os.getenv("NVR_PASS", "")
 NVR_TZ = timezone(timedelta(hours=int(os.getenv("NVR_TZ_HOURS", "5"))))
 # камера videocam-ai -> дорожка регистратора (канал 1 = .2 = cam1, канал 2 = .3)
 NVR_TRACKS = dict(x.split(":") for x in os.getenv("NVR_TRACKS", "cam1:101,cam2:201").split(",") if x)
+# Камеры, которые регистратор пишет в HEVC (cam2 = .3): в mp4 нужна пометка hvc1, иначе iPhone/Telegram не играют.
+# Для H.264 эта пометка ломает запись (ffmpeg: «Tag hvc1 incompatible»), поэтому только по списку.
+NVR_HEVC_CAMERAS = {x for x in os.getenv("NVR_HEVC_CAMERAS", "cam2").split(",") if x}
 ALLOWED_PADS = (5, 10, 20)
 # Регистратор отдаёт отрезок примерно через минуту после его конца (замер 2026-11-25: 30 с — 400 Bad Request, 60 с и больше — OK),
 # и не сразу закрывает предыдущий сеанс воспроизведения — поэтому ждём и повторяем.
@@ -52,7 +55,10 @@ def fetch_clip(camera: str, epoch: int, pad: int, out_path: str, on_stage=None) 
         stage(f"⏳ Жду, пока регистратор запишет отрезок в архив: ~{int(wait)} с")
         time.sleep(wait)
     cmd = ["nice", "-n", "19", "ffmpeg", "-v", "error", "-rtsp_transport", "tcp", "-i", nvr_url(camera, start, end),
-           "-map", "0:v:0", "-c", "copy", "-t", str(end - start), "-movflags", "+faststart", "-y", out_path]
+           "-map", "0:v:0", "-c", "copy", "-t", str(end - start), "-movflags", "+faststart"]
+    if camera in NVR_HEVC_CAMERAS:
+        cmd += ["-tag:v", "hvc1"]
+    cmd += ["-y", out_path]
     err = ""
     for attempt in range(NVR_RETRIES):
         if attempt:
