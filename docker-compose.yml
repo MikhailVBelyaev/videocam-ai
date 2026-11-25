@@ -88,6 +88,7 @@ services:
     volumes:
       - ./output:/app/output   # share output images
       - ./tg_bot/bot.py:/app/bot.py:cached  # mount local bot.py
+      - ./tg_bot/nvr_clip.py:/app/nvr_clip.py:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file:
       - ./tg_bot/.env

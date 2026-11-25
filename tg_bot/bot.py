@@ -14,6 +14,8 @@ import asyncio
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+import nvr_clip
+
 try:
     import docker
     from docker.errors import NotFound, DockerException
@@ -261,12 +263,14 @@ def are_images_similar(img1_path, img2_path, threshold=5):
 # Telegram send
 # ---------------------------------------------------------------------------
 
-def send_photo(file_path: str, caption: str = None) -> bool:
+def send_photo(file_path: str, caption: str = None, reply_markup: dict = None) -> bool:
     global _LAST_SENT_TIMESTAMP, _SENT_COUNT
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     data = {"chat_id": CHAT_ID}
     if caption:
         data["caption"] = caption
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
     try:
         with open(file_path, "rb") as photo:
             res = requests.post(url, data=data, files={"photo": photo})
@@ -520,11 +524,60 @@ def _send_zone_events_iteration() -> None:
                 stamp = event.get("timestamp", "unknown time")
                 prefix = f"{camera}: " if multi_camera else ""
                 caption = f"🏠 {prefix}{label} entered the home approach\n{stamp}"
-                if not os.path.isfile(event["_evidence_path"]) or not send_photo(event["_evidence_path"], caption):
+                markup = _clip_keyboard(camera, event.get("timestamp"))
+                if not os.path.isfile(event["_evidence_path"]) or not send_photo(event["_evidence_path"], caption, markup):
                     # Do not advance on an actual send failure: retry on next tick.
                     break
             _zone_event_state[camera] = os.path.basename(path)
             _save_zone_event_state(camera, path)
+
+
+def _clip_keyboard(camera: str, stamp) -> dict | None:
+    """Кнопки «ролик ±N с» под событием — только если регистратор настроен и у камеры есть дорожка."""
+    if not nvr_clip.NVR_PASS or camera not in nvr_clip.NVR_TRACKS:
+        return None
+    try:
+        epoch = nvr_clip.event_epoch(str(stamp))
+    except ValueError:
+        return None
+    return {"inline_keyboard": [[{"text": f"🎬 ±{p} с", "callback_data": f"clip:{camera}:{epoch}:{p}"}
+                                 for p in nvr_clip.ALLOWED_PADS]]}
+
+
+_CLIP_LOCK = asyncio.Lock()  # ролики строго по одному: регистратор и x99 общие
+
+
+async def clip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Нажата «🎬 ±N с»: забрать [t-N, t+N] из архива регистратора и ответить видео на это сообщение."""
+    query = update.callback_query
+    if not query or str(query.message.chat_id) not in (str(CHAT_ID), str(ADMIN_CHAT_ID)):
+        return
+    try:
+        _, camera, epoch, pad = query.data.split(":")
+        epoch, pad = int(epoch), int(pad)
+    except ValueError:
+        await query.answer("Неверная кнопка")
+        return
+    await query.answer(f"Готовлю ролик ±{pad} с, около 1–2 минут…" + (" (в очереди)" if _CLIP_LOCK.locked() else ""))
+    out_dir = os.path.join(OUTPUT_DIR, ".clips")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"{camera}_{epoch}_{pad}.mp4")
+    async with _CLIP_LOCK:
+        try:
+            await asyncio.to_thread(nvr_clip.fetch_clip, camera, epoch, pad, out)
+            local = datetime.fromtimestamp(epoch, pytz.timezone("Asia/Tashkent")).strftime("%d.%m %H:%M:%S")
+            with open(out, "rb") as fh:
+                await query.message.reply_video(fh, caption=f"{camera}, {local} ±{pad} с", supports_streaming=True,
+                                                read_timeout=120, write_timeout=120)
+            logger.info("[%s] clip sent: %s ±%ss", camera, epoch, pad)
+        except Exception as exc:
+            logger.error("[%s] clip failed: %s", camera, exc)
+            await query.message.reply_text(f"Не удалось получить ролик: {exc}")
+        finally:
+            try:
+                os.remove(out)
+            except OSError:
+                pass
 
 
 async def zone_event_sender_job(context: ContextTypes.DEFAULT_TYPE):
@@ -1116,6 +1169,7 @@ def main():
     app.add_handler(CommandHandler("stacking_on",  stacking_on_command))
     app.add_handler(CommandHandler("stacking_off", stacking_off_command))
     app.add_handler(CallbackQueryHandler(zone_menu_callback, pattern=r"^zone:"))
+    app.add_handler(CallbackQueryHandler(clip_callback, pattern=r"^clip:"))
     # Raw images remain archived for the current retention period.  This is the
     # only delivery job: it reads explicit home-approach events, never frames.
     app.job_queue.run_repeating(zone_event_sender_job, interval=5, first=5)
