@@ -40,20 +40,25 @@ def nvr_url(camera: str, start: int, end: int, password: str = None) -> str:
             f"?starttime={fmt(start)}&endtime={fmt(end)}")
 
 
-def fetch_clip(camera: str, epoch: int, pad: int, out_path: str) -> str:
-    """Скачать ролик [epoch-pad, epoch+pad] в out_path (mp4). Возвращает путь; при ошибке — RuntimeError без пароля в тексте."""
+def fetch_clip(camera: str, epoch: int, pad: int, out_path: str, on_stage=None) -> str:
+    """Скачать ролик [epoch-pad, epoch+pad] в out_path (mp4). Возвращает путь; при ошибке — RuntimeError без пароля в тексте.
+    on_stage(текст) — сообщать этапы владельцу (ожидание архива, скачивание, повтор)."""
+    stage = on_stage or (lambda _text: None)
     if pad not in ALLOWED_PADS or camera not in NVR_TRACKS or not NVR_PASS:
         raise RuntimeError("ролик недоступен: нет пароля регистратора или неизвестная камера")
     start, end = clip_window(epoch, pad)
     wait = end + NVR_LAG_SECONDS - time.time()
     if wait > 0:
+        stage(f"⏳ Жду, пока регистратор запишет отрезок в архив: ~{int(wait)} с")
         time.sleep(wait)
     cmd = ["nice", "-n", "19", "ffmpeg", "-v", "error", "-rtsp_transport", "tcp", "-i", nvr_url(camera, start, end),
            "-map", "0:v:0", "-c", "copy", "-t", str(end - start), "-movflags", "+faststart", "-y", out_path]
     err = ""
     for attempt in range(NVR_RETRIES):
         if attempt:
+            stage(f"⏳ Регистратор ещё не отдал запись, повтор {attempt + 1} из {NVR_RETRIES} через {NVR_RETRY_PAUSE} с")
             time.sleep(NVR_RETRY_PAUSE)
+        stage(f"⬇️ Скачиваю {end - start} с видео с регистратора…")
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=(end - start) * 3 + 60)
         if r.returncode == 0 and os.path.isfile(out_path) and os.path.getsize(out_path) >= 10_000:
             return out_path

@@ -548,7 +548,7 @@ _CLIP_LOCK = asyncio.Lock()  # ролики строго по одному: ре
 
 
 async def clip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Нажата «🎬 ±N с»: забрать [t-N, t+N] из архива регистратора и ответить видео на это сообщение."""
+    """Нажата «🎬 ±N с»: показать статус и готовить ролик в ФОНЕ — бот (уведомления, другие кнопки) не ждёт ролика."""
     query = update.callback_query
     if not query or str(query.message.chat_id) not in (str(CHAT_ID), str(ADMIN_CHAT_ID)):
         return
@@ -558,21 +558,48 @@ async def clip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await query.answer("Неверная кнопка")
         return
-    await query.answer(f"Готовлю ролик ±{pad} с, около 1–2 минут…" + (" (в очереди)" if _CLIP_LOCK.locked() else ""))
+    await query.answer(f"Ролик ±{pad} с: готовлю")
+    queued = _CLIP_LOCK.locked()
+    status = await query.message.reply_text(
+        f"🎬 Ролик ±{pad} с: " + ("в очереди, сначала доделываю предыдущий…" if queued else "начинаю…"))
+    context.application.create_task(_make_clip(query.message, status, camera, epoch, pad), update=update)
+
+
+async def _make_clip(event_msg, status, camera: str, epoch: int, pad: int):
+    """Ролики строго по одному; этапы — правкой статус-сообщения; по готовности статус удаляется, остаётся видео."""
+    loop = asyncio.get_running_loop()
+    last = {"text": None}
+
+    async def set_status(text: str):
+        if text != last["text"]:
+            last["text"] = text
+            try:
+                await status.edit_text(f"🎬 Ролик ±{pad} с\n{text}")
+            except Exception as exc:  # «message is not modified» и т.п. — не повод ронять ролик
+                logger.info("clip status edit skipped: %s", exc)
+
+    def on_stage(text: str):  # вызывается из рабочего потока
+        asyncio.run_coroutine_threadsafe(set_status(text), loop)
+
     out_dir = os.path.join(OUTPUT_DIR, ".clips")
     os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, f"{camera}_{epoch}_{pad}.mp4")
     async with _CLIP_LOCK:
         try:
-            await asyncio.to_thread(nvr_clip.fetch_clip, camera, epoch, pad, out)
+            await asyncio.to_thread(nvr_clip.fetch_clip, camera, epoch, pad, out, on_stage)
+            await set_status("📤 Отправляю видео…")
             local = datetime.fromtimestamp(epoch, pytz.timezone("Asia/Tashkent")).strftime("%d.%m %H:%M:%S")
             with open(out, "rb") as fh:
-                await query.message.reply_video(fh, caption=f"{camera}, {local} ±{pad} с", supports_streaming=True,
-                                                read_timeout=120, write_timeout=120)
+                await event_msg.reply_video(fh, caption=f"{camera}, {local} ±{pad} с", supports_streaming=True,
+                                            read_timeout=120, write_timeout=120)
             logger.info("[%s] clip sent: %s ±%ss", camera, epoch, pad)
+            try:
+                await status.delete()
+            except Exception as exc:
+                logger.info("clip status delete skipped: %s", exc)
         except Exception as exc:
             logger.error("[%s] clip failed: %s", camera, exc)
-            await query.message.reply_text(f"Не удалось получить ролик: {exc}")
+            await set_status(f"❌ Не удалось получить ролик: {exc}")
         finally:
             try:
                 os.remove(out)
