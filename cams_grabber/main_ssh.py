@@ -36,6 +36,10 @@ logging.getLogger("ultralytics").setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 RTSP_URL  = os.getenv("RTSP_URL",  "rtsp://admin:12311231aA%40@192.168.100.2:554/Streaming/Channels/101")
 CAMERA_ID = os.getenv("CAMERA_ID", "cam1")
+# Кодек RTSP-потока камеры: cam1 (.2) отдаёт H.264, cam2 (.3) — HEVC (H.265). От него зависит цепочка GStreamer.
+RTSP_CODEC = os.getenv("RTSP_CODEC", "h264").lower()
+if RTSP_CODEC not in ("h264", "h265"):
+    raise SystemExit(f"RTSP_CODEC must be h264 or h265, got {RTSP_CODEC!r}")
 
 ANIMAL_CLASSES = {
     "bird", "cat", "dog", "horse", "sheep", "cow",
@@ -215,7 +219,7 @@ def _reader_thread(url: str) -> None:
             # RAM so appsink can map it as a plain CPU buffer (3 MB NV12 per frame).
             pipeline = Gst.parse_launch(
                 'rtspsrc name=src latency=0 ! '
-                'rtph264depay ! h264parse ! nvh264dec ! '
+                f'rtph{RTSP_CODEC[1:]}depay ! {RTSP_CODEC}parse ! nv{RTSP_CODEC}dec ! '
                 'cudadownload ! video/x-raw,format=NV12 ! '
                 'appsink name=sink sync=false max-buffers=2 drop=true'
             )

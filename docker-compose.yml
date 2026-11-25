@@ -30,19 +30,29 @@ services:
       timeout: 10s
       retries: 3
 
-  # Camera 2 — add RTSP_URL when camera is physically connected, then:
-  #   docker compose --profile cam2 up -d cams_grabber_cam2
+  # Camera 2 (192.168.100.3, вдоль стены с окнами), включена 2026-11-25. Зона — cams_grabber/zone_config.cam2.json
+  # (подставляется как default и при первом запуске копируется в output/cam2/zone_config.json). RTSP_URL — в
+  # cams_grabber/.env.cam2 (в git не попадает). GPU0, как и все GPU-службы x99 (решение владельца 2026-10-07).
   cams_grabber_cam2:
-    profiles: ["cam2"]
     build: ./cams_grabber
     container_name: cams_grabber_cam2
+    mem_limit: 4g
+    memswap_limit: 4g
     volumes:
       - ./output:/app/output
       - ./cams_grabber/main_ssh.py:/app/main_ssh.py:cached
+      - ./cams_grabber/zone_events.py:/app/zone_events.py:ro
+      - ./cams_grabber/zone_config.cam2.json:/app/zone_config.default.json:ro
+    env_file:
+      - ./cams_grabber/.env.cam2
     environment:
-      - CUDA_VISIBLE_DEVICES=1
+      - NVIDIA_VISIBLE_DEVICES=0
+      - NVIDIA_DRIVER_CAPABILITIES=video,compute,utility
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
       - CAMERA_ID=cam2
-      - RTSP_URL=rtsp://user:pass@192.168.100.X:554/Streaming/Channels/101
+      - RTSP_CODEC=h265   # камера .3 отдаёт HEVC (cam1 — H.264, по умолчанию)
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
     runtime: nvidia
     restart: always
     logging:
