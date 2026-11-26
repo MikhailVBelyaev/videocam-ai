@@ -172,6 +172,9 @@ services:
       retries: 3
 
   qa_service:
+    # 2026-11-26: OFF by default (owner) to save GPU0/CPU — see README "Экономия ресурсов".
+    # Start manually: docker compose --profile qa up -d qa_service
+    profiles: ["qa"]
     build: ./qa_service
     container_name: qa_service
     mem_limit: 1g
