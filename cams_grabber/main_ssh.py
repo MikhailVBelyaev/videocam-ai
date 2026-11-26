@@ -63,7 +63,9 @@ SAME_SCENE_THRESHOLD = 5       # phash distance <= this for same tracking ID -> 
 
 # Video clip recording
 RECORD_MIN_PERSIST_FRAMES = 5  # one higher than MIN_PERSIST_FRAMES — clip is a heavier commit than a JPG
-INFERENCE_FPS_MAX = 15         # cap main-loop rate; limited to camera output rate (~15fps)
+# 2026-11-26: 15 -> 10 fps (owner) to unload GPU0/CPU with two cameras; 10 fps is plenty
+# to catch a person crossing the zone. Override per camera via env INFERENCE_FPS_MAX.
+INFERENCE_FPS_MAX = int(os.getenv("INFERENCE_FPS_MAX", "10"))
 _INFERENCE_INTERVAL = 1.0 / INFERENCE_FPS_MAX
 
 # Own mp4 per event is OFF by default since 2026-11-26: the Telegram buttons fetch the
@@ -71,7 +73,7 @@ _INFERENCE_INTERVAL = 1.0 / INFERENCE_FPS_MAX
 # was a duplicate. Code kept; EVENT_CLIPS=1 turns it back on.
 EVENT_CLIPS_ENABLED = os.getenv("EVENT_CLIPS", "0") == "1"
 
-PREROLL_FRAMES = 45            # ring-buffer depth: 3s pre-roll at INFERENCE_FPS_MAX
+PREROLL_FRAMES = 3 * INFERENCE_FPS_MAX  # ring-buffer depth: 3s pre-roll at INFERENCE_FPS_MAX
 MAX_CLIP_SECONDS = 30          # hard per-clip cap; bounds disk use for loitering objects
 CLIP_COOLDOWN_SECONDS = 60     # gap between clips for the same tracking ID
 RECORD_FPS = float(INFERENCE_FPS_MAX)  # match video header to actual capture rate
@@ -414,7 +416,7 @@ def iou(boxA: list, boxB: list) -> float:
 model = YOLO("yolov8s.pt")
 _init_quality_kernels()    # needs CUDA already initialised by YOLO above
 logging.info("GPU quality-check kernels ready on cuda:0")
-logging.info("Own event mp4 clips: %s", "on" if EVENT_CLIPS_ENABLED else "off (NVR clips via bot)")
+logging.info("Inference cap %d fps, own event mp4 clips: %s", INFERENCE_FPS_MAX, "on" if EVENT_CLIPS_ENABLED else "off (NVR clips via bot)")
 
 object_last_seen: dict = {}
 detection_buffer: dict = defaultdict(int)
